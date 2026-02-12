@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vibe_carlo — Monte Carlo Financial Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-4xl mx-auto px-6 py-4">
+            <h1 class="text-2xl font-bold text-gray-800">vibe_carlo</h1>
+            <p class="text-sm text-gray-500">Monte Carlo financial projection</p>
+        </div>
+    </header>
+    <main class="max-w-4xl mx-auto px-6 py-8">
+        {% block content %}{% endblock %}
+    </main>
+    <footer class="text-center text-xs text-gray-400 py-6">
+        Historical data: Damodaran (NYU Stern), 1928–2024. For educational purposes only.
+    </footer>
+</body>
+</html>

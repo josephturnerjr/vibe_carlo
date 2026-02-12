@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<form
+    hx-post="/simulate"
+    hx-target="#results"
+    hx-swap="innerHTML"
+    hx-indicator="#spinner"
+    class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6"
+>
+    <h2 class="text-lg font-semibold text-gray-700">Portfolio</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+            <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
+            <input type="number" name="cash_value" id="cash_value" value="10000" min="0" step="1000"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="market_value" class="block text-sm font-medium text-gray-600 mb-1">Market / Stocks ($)</label>
+            <input type="number" name="market_value" id="market_value" value="70000" min="0" step="1000"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="bond_value" class="block text-sm font-medium text-gray-600 mb-1">Bonds ($)</label>
+            <input type="number" name="bond_value" id="bond_value" value="20000" min="0" step="1000"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-700">Annual Cash Flows (real dollars)</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="annual_contribution" class="block text-sm font-medium text-gray-600 mb-1">Contributions ($)</label>
+            <input type="number" name="annual_contribution" id="annual_contribution" value="12000" min="0" step="1000"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="annual_spending" class="block text-sm font-medium text-gray-600 mb-1">Spending / Withdrawals ($)</label>
+            <input type="number" name="annual_spending" id="annual_spending" value="0" min="0" step="1000"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-700">Simulation</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="years_to_simulate" class="block text-sm font-medium text-gray-600 mb-1">Years to simulate</label>
+            <input type="number" name="years_to_simulate" id="years_to_simulate" value="30" min="1" max="80"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <details class="group">
+                <summary class="text-sm font-medium text-gray-500 cursor-pointer select-none mb-1">Advanced settings</summary>
+                <div class="mt-2">
+                    <label for="sample_years" class="block text-sm font-medium text-gray-600 mb-1">Sample block length (years)</label>
+                    <input type="number" name="sample_years" id="sample_years" placeholder="Same as simulation years" min="1" max="80"
+                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                    <p class="text-xs text-gray-400 mt-1">Length of contiguous historical blocks to sample</p>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <button type="submit"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
+        Run Simulation
+    </button>
+</form>
+
+<div id="spinner" class="htmx-indicator text-center py-8">
+    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
+    <p class="text-sm text-gray-500 mt-2">Running 10,000 simulations...</p>
+</div>
+
+<div id="results" class="mt-8"></div>
+{% endblock %}

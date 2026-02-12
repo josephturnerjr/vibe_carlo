@@ -1,0 +1,132 @@
+<div class="space-y-8">
+    <!-- Success Rate -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
+        <p class="text-sm text-gray-500 uppercase tracking-wide">Portfolio Survival Rate</p>
+        <p class="text-4xl font-bold mt-1
+            {% if result.success_rate >= 0.9 %}text-green-600
+            {% elif result.success_rate >= 0.7 %}text-yellow-600
+            {% else %}text-red-600{% endif %}">
+            {{ "%.1f"|format(result.success_rate * 100) }}%
+        </p>
+        <p class="text-xs text-gray-400 mt-1">of 10,000 simulations never reached $0</p>
+    </div>
+
+    <!-- Fan Chart -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4">Portfolio Projection (real dollars)</h3>
+        <div id="fan-chart"></div>
+    </div>
+
+    <!-- Histogram -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4">Final Year Portfolio Distribution</h3>
+        <div id="histogram"></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const yearLabels = {{ result.year_labels | tojson }};
+    const percentiles = {{ result.percentiles | tojson }};
+    const finalDist = {{ result.final_year_distribution | tojson }};
+
+    function formatDollar(val) {
+        if (val >= 1e6) return '$' + (val / 1e6).toFixed(1) + 'M';
+        if (val >= 1e3) return '$' + (val / 1e3).toFixed(0) + 'K';
+        return '$' + val.toFixed(0);
+    }
+
+    // Fan chart
+    const fanTraces = [
+        // 10th-90th band
+        {
+            x: yearLabels,
+            y: percentiles.p10,
+            type: 'scatter',
+            mode: 'lines',
+            line: { width: 0 },
+            showlegend: false,
+            hoverinfo: 'skip',
+        },
+        {
+            x: yearLabels,
+            y: percentiles.p90,
+            type: 'scatter',
+            mode: 'lines',
+            fill: 'tonexty',
+            fillcolor: 'rgba(59, 130, 246, 0.1)',
+            line: { width: 0 },
+            name: '10th–90th',
+            hoverinfo: 'skip',
+        },
+        // 25th-75th band
+        {
+            x: yearLabels,
+            y: percentiles.p25,
+            type: 'scatter',
+            mode: 'lines',
+            line: { width: 0 },
+            showlegend: false,
+            hoverinfo: 'skip',
+        },
+        {
+            x: yearLabels,
+            y: percentiles.p75,
+            type: 'scatter',
+            mode: 'lines',
+            fill: 'tonexty',
+            fillcolor: 'rgba(59, 130, 246, 0.25)',
+            line: { width: 0 },
+            name: '25th–75th',
+            hoverinfo: 'skip',
+        },
+        // Median line
+        {
+            x: yearLabels,
+            y: percentiles.p50,
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'rgb(37, 99, 235)', width: 2.5 },
+            name: 'Median',
+            hovertemplate: 'Year %{x}<br>%{text}<extra></extra>',
+            text: percentiles.p50.map(formatDollar),
+        },
+    ];
+
+    const fanLayout = {
+        xaxis: { title: 'Year', dtick: 5 },
+        yaxis: {
+            title: 'Portfolio Value',
+            tickprefix: '$',
+            separatethousands: true,
+        },
+        legend: { orientation: 'h', y: -0.2 },
+        margin: { t: 20, r: 20 },
+        hovermode: 'x unified',
+    };
+
+    Plotly.newPlot('fan-chart', fanTraces, fanLayout, { responsive: true });
+
+    // Histogram
+    const histTrace = {
+        x: finalDist,
+        type: 'histogram',
+        nbinsx: 60,
+        marker: { color: 'rgba(59, 130, 246, 0.7)', line: { color: 'rgba(59, 130, 246, 1)', width: 1 } },
+        hovertemplate: '%{x:$,.0f}<br>Count: %{y}<extra></extra>',
+    };
+
+    const histLayout = {
+        xaxis: {
+            title: 'Final Portfolio Value',
+            tickprefix: '$',
+            separatethousands: true,
+        },
+        yaxis: { title: 'Frequency' },
+        margin: { t: 20, r: 20 },
+        bargap: 0.05,
+    };
+
+    Plotly.newPlot('histogram', [histTrace], histLayout, { responsive: true });
+})();
+</script>
