@@ -39,9 +39,12 @@ Phase 1 is a stateless request/response application. The browser sends form inpu
 │  │  └────────────────────────────┘  │               │
 │  │                                  │               │
 │  │  NumPy vectorized simulation:    │               │
-│  │  - Sample N historical years     │               │
+│  │  - 3 asset classes:              │               │
+│  │    Cash, Market, Bonds           │               │
+│  │  - Block bootstrap resampling    │               │
 │  │  - Apply returns + inflation     │               │
-│  │  - Compute percentiles           │               │
+│  │  - Compute percentiles +         │               │
+│  │    final-year distribution       │               │
 │  └──────────────────────────────────┘               │
 │         │                                           │
 │         ▼                                           │
@@ -55,9 +58,9 @@ Phase 1 is a stateless request/response application. The browser sends form inpu
 ## Request Flow
 1. User fills out the input form on `index.html`
 2. HTMX intercepts the form submit and POSTs to `/simulate`
-3. FastAPI validates inputs via Pydantic schema
-4. Simulation engine runs 10,000 Monte Carlo paths (vectorized NumPy)
-5. Engine returns percentile time series + summary statistics
+3. FastAPI validates inputs via Pydantic schema (cash_value, market_value, bond_value, contributions, spending, years_to_simulate, sample_years)
+4. Simulation engine runs 10,000 Monte Carlo paths across three asset classes (vectorized NumPy)
+5. Engine returns percentile time series, success rate, and full final-year distribution array (for histogram)
 6. Route renders `partials/results.html` with chart data embedded as JSON
 7. HTMX swaps the results partial into the page
 8. Plotly.js renders interactive charts client-side

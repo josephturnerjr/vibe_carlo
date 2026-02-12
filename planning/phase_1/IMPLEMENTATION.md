@@ -37,17 +37,20 @@
 
 ### 3. Simulation Engine (`simulation/engine.py`)
 - Core function: `run_simulation(params: SimulationParams, historical_data: np.ndarray, n_runs: int = 10_000, seed: int | None = None) -> SimulationResult`
-- Block bootstrap: for each run, sample `n_years` row indices from historical data (with replacement), pull stock return, bond return, and inflation for each
-- Compute blended portfolio return per year: `allocation * stock_return + (1 - allocation) * bond_return`
-- Compound year-by-year: apply return, subtract spending, add contributions, adjust for inflation
-- Portfolio floor at $0 (can't go negative)
-- Return percentile time series (10th, 25th, 50th, 75th, 90th) and success rate
+- Block bootstrap: for each run, pick a random start index in the historical data such that the full block fits (start + `sample_years` ≤ dataset length). Take that contiguous block of years' stock return, bond return, and CPI inflation. If `years_to_simulate` > `sample_years`, draw additional blocks and append until all years are covered.
+- Compute allocations from input dollar values: `market_alloc = market_value / total_portfolio`, `bond_alloc = bond_value / total_portfolio`, `cash_alloc = cash_value / total_portfolio`
+- Compute blended nominal return per year: `(market_alloc * stock_return) + (bond_alloc * bond_return) + (cash_alloc * 0.0)`
+- Deflate nominal return by sampled CPI to get real return: `real_return = (1 + nominal_return) / (1 + cpi_inflation) - 1`
+- Contributions and spending are in real terms (constant purchasing power) — no separate inflation adjustment needed for these
+- Compound year-by-year: apply real return, add contributions, subtract spending
+- Portfolio floor at $0 (can't go negative); success = portfolio never touches $0 at any point during the simulation
+- Return percentile time series (10th, 25th, 50th, 75th, 90th), success rate, and full final-year distribution array (for histogram)
 - All operations vectorized with NumPy (simulate all 10,000 runs as a 2D array)
 
 ### 4. Pydantic Schemas (`schemas.py`)
-- `SimulationInput`: portfolio_value, annual_contribution, annual_spending, current_age, retirement_age, end_age, stock_allocation (0.0–1.0)
-- `SimulationOutput`: percentiles dict, success_rate, year_labels, metadata
-- Input validation: all values non-negative, ages make sense (current < retirement ≤ end), allocation between 0 and 1
+- `SimulationInput`: cash_value, market_value, bond_value, annual_contribution, annual_spending, years_to_simulate, sample_years (optional, defaults to years_to_simulate)
+- `SimulationOutput`: percentiles dict, success_rate, year_labels, final_year_distribution (array of 10,000 terminal portfolio values for histogram), metadata
+- Input validation: all dollar values non-negative, at least one asset class > 0, years_to_simulate > 0, sample_years > 0 and ≤ years_to_simulate
 
 ### 5. FastAPI App (`app.py`)
 - `GET /` → render `index.html` (input form)
