@@ -27,7 +27,8 @@ def test_simulate_returns_results(client: TestClient) -> None:
             "market_value": "70000",
             "bond_value": "20000",
             "annual_contribution": "12000",
-            "annual_spending": "0",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "0",
             "years_to_simulate": "10",
         },
     )
@@ -45,7 +46,8 @@ def test_simulate_with_sample_years(client: TestClient) -> None:
             "market_value": "100000",
             "bond_value": "0",
             "annual_contribution": "0",
-            "annual_spending": "5000",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "5000",
             "years_to_simulate": "20",
             "sample_years": "5",
         },
@@ -62,7 +64,8 @@ def test_simulate_with_tax_settings(client: TestClient) -> None:
             "market_value": "500000",
             "bond_value": "0",
             "annual_contribution": "0",
-            "annual_spending": "50000",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "50000",
             "years_to_simulate": "10",
             "filing_status": "single",
             "other_income": "20000",
@@ -71,7 +74,7 @@ def test_simulate_with_tax_settings(client: TestClient) -> None:
     assert response.status_code == 200
     assert "Portfolio Survival Rate" in response.text
     assert "Federal Tax Adjustment" in response.text
-    assert "Gross withdrawal" in response.text
+    assert "Gross" in response.text
 
 
 def test_simulate_without_filing_status_no_tax_card(client: TestClient) -> None:
@@ -82,7 +85,8 @@ def test_simulate_without_filing_status_no_tax_card(client: TestClient) -> None:
             "market_value": "70000",
             "bond_value": "20000",
             "annual_contribution": "12000",
-            "annual_spending": "0",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "0",
             "years_to_simulate": "10",
         },
     )
@@ -98,7 +102,8 @@ def test_simulate_invalid_filing_status(client: TestClient) -> None:
             "market_value": "70000",
             "bond_value": "20000",
             "annual_contribution": "0",
-            "annual_spending": "5000",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "5000",
             "years_to_simulate": "10",
             "filing_status": "invalid_status",
         },
@@ -114,8 +119,68 @@ def test_simulate_validation_error_zero_portfolio(client: TestClient) -> None:
             "market_value": "0",
             "bond_value": "0",
             "annual_contribution": "0",
-            "annual_spending": "0",
+            "spending_dist_type": "flat",
+            "spending_dist_value": "0",
             "years_to_simulate": "30",
         },
     )
     assert response.status_code == 422
+
+
+def test_simulate_uniform_distribution(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "0",
+            "market_value": "500000",
+            "bond_value": "0",
+            "annual_contribution": "0",
+            "spending_dist_type": "uniform",
+            "spending_dist_low": "40000",
+            "spending_dist_high": "60000",
+            "years_to_simulate": "10",
+        },
+    )
+    assert response.status_code == 200
+    assert "Portfolio Survival Rate" in response.text
+
+
+def test_simulate_truncated_normal_distribution(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "0",
+            "market_value": "500000",
+            "bond_value": "0",
+            "annual_contribution": "0",
+            "spending_dist_type": "truncated_normal",
+            "spending_dist_low": "35000",
+            "spending_dist_high": "65000",
+            "spending_dist_mean": "50000",
+            "spending_dist_stddev": "5000",
+            "years_to_simulate": "10",
+        },
+    )
+    assert response.status_code == 200
+    assert "Portfolio Survival Rate" in response.text
+
+
+def test_simulate_uniform_with_tax(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "0",
+            "market_value": "500000",
+            "bond_value": "0",
+            "annual_contribution": "0",
+            "spending_dist_type": "uniform",
+            "spending_dist_low": "40000",
+            "spending_dist_high": "60000",
+            "years_to_simulate": "10",
+            "filing_status": "single",
+            "other_income": "0",
+        },
+    )
+    assert response.status_code == 200
+    assert "Federal Tax Adjustment" in response.text
+    assert "Avg gross" in response.text

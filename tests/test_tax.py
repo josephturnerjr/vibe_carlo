@@ -1,7 +1,12 @@
+import numpy as np
 import pytest
 
 from vibe_carlo.schemas import FilingStatus
-from vibe_carlo.simulation.tax import compute_tax, gross_up_withdrawal
+from vibe_carlo.simulation.tax import (
+    compute_tax,
+    gross_up_withdrawal,
+    gross_up_withdrawal_array,
+)
 
 # ---------------------------------------------------------------------------
 # compute_tax tests
@@ -119,3 +124,50 @@ def test_gross_up_head_of_household() -> None:
 
 def test_gross_up_married_separately() -> None:
     _round_trip_verify(60_000, FilingStatus.married_separately, 30_000)
+
+
+# ---------------------------------------------------------------------------
+# gross_up_withdrawal_array tests (vectorized)
+# ---------------------------------------------------------------------------
+
+
+def test_array_matches_scalar_single() -> None:
+    """Vectorized results should match scalar for a range of values."""
+    values = [0.0, 10_000.0, 50_000.0, 100_000.0, 200_000.0]
+    arr = np.array(values)
+    result = gross_up_withdrawal_array(arr, FilingStatus.single, 0.0)
+    for i, v in enumerate(values):
+        expected = gross_up_withdrawal(v, FilingStatus.single, 0.0)
+        assert result[i] == pytest.approx(expected, abs=0.01)
+
+
+def test_array_matches_scalar_with_other_income() -> None:
+    values = [0.0, 20_000.0, 80_000.0]
+    arr = np.array(values)
+    result = gross_up_withdrawal_array(arr, FilingStatus.single, 50_000.0)
+    for i, v in enumerate(values):
+        expected = gross_up_withdrawal(v, FilingStatus.single, 50_000.0)
+        assert result[i] == pytest.approx(expected, abs=0.01)
+
+
+def test_array_2d_shape() -> None:
+    arr = np.array([[50_000.0, 60_000.0], [70_000.0, 80_000.0]])
+    result = gross_up_withdrawal_array(arr, FilingStatus.married_jointly, 0.0)
+    assert result.shape == (2, 2)
+    for i in range(2):
+        for j in range(2):
+            expected = gross_up_withdrawal(arr[i, j], FilingStatus.married_jointly, 0.0)
+            assert result[i, j] == pytest.approx(expected, abs=0.01)
+
+
+def test_array_all_zeros() -> None:
+    arr = np.zeros((5, 3))
+    result = gross_up_withdrawal_array(arr, FilingStatus.single, 0.0)
+    assert np.all(result == 0.0)
+
+
+def test_array_high_income() -> None:
+    arr = np.array([1_000_000.0])
+    result = gross_up_withdrawal_array(arr, FilingStatus.single, 500_000.0)
+    expected = gross_up_withdrawal(1_000_000.0, FilingStatus.single, 500_000.0)
+    assert result[0] == pytest.approx(expected, abs=0.01)

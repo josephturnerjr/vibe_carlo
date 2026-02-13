@@ -1,0 +1,79 @@
+{% macro distribution_picker(prefix, label, default_value=0, step=1000) %}
+<div class="space-y-3">
+    <label class="block text-sm font-medium text-gray-600">{{ label }}</label>
+
+    <!-- Distribution type selector -->
+    <select name="{{ prefix }}_dist_type" id="{{ prefix }}_dist_type"
+            onchange="updateDistFields('{{ prefix }}')"
+            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2 text-sm">
+        <option value="flat" selected>Fixed Amount</option>
+        <option value="uniform">Uniform (range)</option>
+        <option value="truncated_normal">Normal (bell curve)</option>
+    </select>
+
+    <!-- Flat: single value -->
+    <div id="{{ prefix }}_flat_fields">
+        <input type="number" name="{{ prefix }}_dist_value" id="{{ prefix }}_dist_value"
+               value="{{ default_value }}" min="0" step="{{ step }}"
+               oninput="updateDistPreview('{{ prefix }}')"
+               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+    </div>
+
+    <!-- Uniform: low + high -->
+    <div id="{{ prefix }}_uniform_fields" class="hidden">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
+                <input type="number" name="{{ prefix }}_dist_low" id="{{ prefix }}_u_low"
+                       value="0" min="0" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">High ($)</label>
+                <input type="number" name="{{ prefix }}_dist_high" id="{{ prefix }}_u_high"
+                       value="0" min="0" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+        </div>
+    </div>
+
+    <!-- Truncated Normal: low, high, mean, stddev -->
+    <div id="{{ prefix }}_truncated_normal_fields" class="hidden">
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
+                <input type="number" name="{{ prefix }}_dist_low" id="{{ prefix }}_tn_low"
+                       value="0" min="0" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">High ($)</label>
+                <input type="number" name="{{ prefix }}_dist_high" id="{{ prefix }}_tn_high"
+                       value="0" min="0" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Mean ($)</label>
+                <input type="number" name="{{ prefix }}_dist_mean" id="{{ prefix }}_tn_mean"
+                       value="0" min="0" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Std Dev ($)</label>
+                <input type="number" name="{{ prefix }}_dist_stddev" id="{{ prefix }}_tn_stddev"
+                       value="5000" min="1" step="{{ step }}" disabled
+                       oninput="updateDistPreview('{{ prefix }}')"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview chart -->
+    <div id="{{ prefix }}_preview" style="height: 96px;"></div>
+</div>
+{% endmacro %}

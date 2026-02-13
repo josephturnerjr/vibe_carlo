@@ -2,8 +2,9 @@ import numpy as np
 import numpy.typing as npt
 
 from vibe_carlo.schemas import SimulationInput, SimulationResult
+from vibe_carlo.simulation.distributions import sample_spending
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
-from vibe_carlo.simulation.tax import gross_up_withdrawal
+from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
 
 def run_simulation(
@@ -20,22 +21,24 @@ def run_simulation(
     block_len = params.sample_years
     n_historical = len(historical_data)
 
-    # Compute gross withdrawal (pre-tax) if tax adjustment is active
+    # Sample spending: shape (n_runs, years)
+    spending_samples = sample_spending(params.spending_distribution, n_runs, years, rng)
+
+    # Compute gross withdrawals (pre-tax) if tax adjustment is active
     if params.filing_status is not None:
-        gross_withdrawal = gross_up_withdrawal(
-            params.annual_spending,
+        gross_withdrawals = gross_up_withdrawal_array(
+            spending_samples,
             params.filing_status,
             params.other_income,
         )
     else:
-        gross_withdrawal = params.annual_spending
+        gross_withdrawals = spending_samples
 
     total_portfolio = params.cash_value + params.market_value + params.bond_value
     market_alloc = params.market_value / total_portfolio
     bond_alloc = params.bond_value / total_portfolio
 
     # Build sampled return indices for all runs: shape (n_runs, years)
-    # Each run gets contiguous blocks of length block_len
     sampled_indices = _build_bootstrap_indices(rng, n_runs, years, block_len, n_historical)
 
     # Gather the historical data for all runs: shape (n_runs, years, 3)
@@ -47,13 +50,11 @@ def run_simulation(
 
     # Blended nominal return
     nominal_return = market_alloc * sp500_returns + bond_alloc * bond_returns
-    # Cash earns 0% nominal, so cash_alloc * 0.0 is omitted
 
     # Real return: deflate by CPI
     real_return = (1 + nominal_return) / (1 + cpi_inflation) - 1
 
     # Simulate year-by-year: portfolio compounds with real returns
-    # portfolios shape: (n_runs, years + 1) — includes year 0 (starting value)
     portfolios = np.zeros((n_runs, years + 1), dtype=np.float64)
     portfolios[:, 0] = total_portfolio
 
@@ -63,8 +64,8 @@ def run_simulation(
     for y in range(years):
         value = portfolios[:, y]
         value = value * (1 + real_return[:, y])
-        value = value + params.annual_contribution - gross_withdrawal
-        value = np.maximum(value, 0.0)  # Floor at $0
+        value = value + params.annual_contribution - gross_withdrawals[:, y]
+        value = np.maximum(value, 0.0)
         portfolios[:, y + 1] = value
         ever_hit_zero |= value == 0.0
 
@@ -79,16 +80,17 @@ def run_simulation(
     p90 = np.percentile(portfolios, 90, axis=0).tolist()
 
     year_labels = list(range(years + 1))
-
     final_year_distribution = portfolios[:, -1].tolist()
 
     # Tax info for results (only when tax adjustment is active)
     result_gross: float | None = None
     result_etr: float | None = None
     if params.filing_status is not None:
-        result_gross = gross_withdrawal
-        if gross_withdrawal > 0:
-            result_etr = (gross_withdrawal - params.annual_spending) / gross_withdrawal
+        mean_gross = float(np.mean(gross_withdrawals))
+        mean_spending = float(np.mean(spending_samples))
+        result_gross = mean_gross
+        if mean_gross > 0:
+            result_etr = (mean_gross - mean_spending) / mean_gross
         else:
             result_etr = 0.0
 

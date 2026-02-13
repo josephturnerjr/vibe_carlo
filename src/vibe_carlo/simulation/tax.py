@@ -4,6 +4,9 @@ Uses 2026 tax brackets and standard deductions per IRS inflation adjustments.
 All withdrawals assumed to be ordinary income (traditional IRA/401k).
 """
 
+import numpy as np
+import numpy.typing as npt
+
 from vibe_carlo.schemas import FilingStatus
 
 # 2026 federal tax rates (progressive brackets)
@@ -135,6 +138,58 @@ def gross_up_withdrawal(
             # Fill entire bracket
             gross += bracket_capacity
             after_tax_remaining -= after_tax_capacity
+
+        prev_bound = upper
+
+    return gross
+
+
+def gross_up_withdrawal_array(
+    desired_spending: npt.NDArray[np.float64],
+    filing_status: FilingStatus,
+    other_income: float = 0.0,
+) -> npt.NDArray[np.float64]:
+    """Vectorized gross-up: same algorithm as scalar version but over an ndarray.
+
+    Parameters match the scalar version but desired_spending is an array of any shape.
+    Returns an array of the same shape containing the gross (pre-tax) withdrawals.
+    """
+    std_ded = STANDARD_DEDUCTION[filing_status]
+    brackets = BRACKETS[filing_status]
+
+    deduction_remaining = max(0.0, std_ded - other_income)
+    other_taxable = max(0.0, other_income - std_ded)
+
+    after_tax_remaining = desired_spending.copy()
+    gross = np.zeros_like(desired_spending)
+
+    # Phase 1: consume remaining standard deduction (tax-free)
+    if deduction_remaining > 0:
+        use = np.minimum(deduction_remaining, after_tax_remaining)
+        use = np.maximum(use, 0.0)
+        gross += use
+        after_tax_remaining -= use
+
+    # Phase 2: walk brackets starting from where other_taxable sits
+    prev_bound = 0.0
+    for rate, upper in zip(RATES, brackets):
+        # Skip brackets fully consumed by other_taxable
+        if other_taxable >= upper:
+            prev_bound = upper
+            continue
+
+        bracket_start = max(prev_bound, other_taxable)
+        bracket_capacity = upper - bracket_start
+
+        after_tax_per_dollar = 1.0 - rate
+        after_tax_capacity = bracket_capacity * after_tax_per_dollar
+
+        # How much after-tax spending can this bracket serve?
+        can_fill = np.minimum(after_tax_remaining, after_tax_capacity)
+        can_fill = np.maximum(can_fill, 0.0)
+
+        gross += can_fill / after_tax_per_dollar
+        after_tax_remaining -= can_fill
 
         prev_bound = upper
 

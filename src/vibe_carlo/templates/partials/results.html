@@ -18,14 +18,22 @@
         <div class="grid grid-cols-2 gap-4 text-center">
             <div>
                 <p class="text-2xl font-bold text-gray-800">${{ "{:,.0f}".format(result.gross_withdrawal) }}</p>
-                <p class="text-xs text-gray-400">Gross withdrawal / year</p>
+                <p class="text-xs text-gray-400">
+                    {% if params.spending_distribution.dist_type != "flat" %}Avg gross{% else %}Gross{% endif %} withdrawal / year
+                </p>
             </div>
             <div>
                 <p class="text-2xl font-bold text-gray-800">{{ "%.1f"|format(result.effective_tax_rate * 100) }}%</p>
-                <p class="text-xs text-gray-400">Effective tax rate</p>
+                <p class="text-xs text-gray-400">
+                    {% if params.spending_distribution.dist_type != "flat" %}Avg effective{% else %}Effective{% endif %} tax rate
+                </p>
             </div>
         </div>
-        <p class="text-xs text-gray-400 mt-3">To spend ${{ "{:,.0f}".format(params.annual_spending) }} after tax, ${{ "{:,.0f}".format(result.gross_withdrawal) }} must be withdrawn to cover federal income tax.</p>
+        {% if params.spending_distribution.dist_type == "flat" %}
+        <p class="text-xs text-gray-400 mt-3">To spend ${{ "{:,.0f}".format(params.spending_distribution.value) }} after tax, ${{ "{:,.0f}".format(result.gross_withdrawal) }} must be withdrawn to cover federal income tax.</p>
+        {% else %}
+        <p class="text-xs text-gray-400 mt-3">Average gross withdrawal across all simulation samples to cover federal income tax on spending.</p>
+        {% endif %}
     </div>
     {% endif %}
 

@@ -10,7 +10,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
-from vibe_carlo.schemas import FilingStatus, SimulationInput
+from vibe_carlo.schemas import (
+    FilingStatus,
+    FlatDistribution,
+    SimulationInput,
+    SpendingDistribution,
+    TruncatedNormalDistribution,
+    UniformDistribution,
+)
 from vibe_carlo.simulation.engine import run_simulation
 from vibe_carlo.simulation.models import load_historical_data
 
@@ -31,6 +38,23 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
+def _parse_distribution(
+    dist_type: str,
+    value: float,
+    low: float,
+    high: float,
+    mean: float,
+    stddev: float,
+) -> SpendingDistribution:
+    """Convert form fields into the appropriate SpendingDistribution model."""
+    if dist_type == "uniform":
+        return UniformDistribution(low=low, high=high)
+    if dist_type == "truncated_normal":
+        return TruncatedNormalDistribution(low=low, high=high, mean=mean, stddev=stddev)
+    # Default to flat
+    return FlatDistribution(value=value)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "index.html")
@@ -43,19 +67,32 @@ async def simulate(
     market_value: float = Form(default=0.0),
     bond_value: float = Form(default=0.0),
     annual_contribution: float = Form(default=0.0),
-    annual_spending: float = Form(default=0.0),
+    spending_dist_type: str = Form(default="flat"),
+    spending_dist_value: float = Form(default=0.0),
+    spending_dist_low: float = Form(default=0.0),
+    spending_dist_high: float = Form(default=0.0),
+    spending_dist_mean: float = Form(default=0.0),
+    spending_dist_stddev: float = Form(default=5000.0),
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
     filing_status: str | None = Form(default=None),
     other_income: float = Form(default=0.0),
 ) -> HTMLResponse | JSONResponse:
     try:
+        spending_dist = _parse_distribution(
+            spending_dist_type,
+            spending_dist_value,
+            spending_dist_low,
+            spending_dist_high,
+            spending_dist_mean,
+            spending_dist_stddev,
+        )
         params = SimulationInput(
             cash_value=cash_value,
             market_value=market_value,
             bond_value=bond_value,
             annual_contribution=annual_contribution,
-            annual_spending=annual_spending,
+            spending_distribution=spending_dist,
             years_to_simulate=years_to_simulate,
             sample_years=sample_years,
             filing_status=FilingStatus(filing_status) if filing_status else None,

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/distribution_picker.html" import distribution_picker %}
 
 {% block content %}
 <form
@@ -35,9 +36,7 @@
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
-            <label for="annual_spending" class="block text-sm font-medium text-gray-600 mb-1">Spending / Withdrawals ($)</label>
-            <input type="number" name="annual_spending" id="annual_spending" value="0" min="0" step="1000"
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000) }}
         </div>
     </div>
 

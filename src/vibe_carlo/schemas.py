@@ -1,6 +1,7 @@
 from enum import StrEnum
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class FilingStatus(StrEnum):
@@ -10,12 +11,58 @@ class FilingStatus(StrEnum):
     head_of_household = "head_of_household"
 
 
+# ---------------------------------------------------------------------------
+# Spending distribution models (discriminated union on dist_type)
+# ---------------------------------------------------------------------------
+
+
+class FlatDistribution(BaseModel):
+    dist_type: Literal["flat"] = "flat"
+    value: float = Field(ge=0)
+
+
+class UniformDistribution(BaseModel):
+    dist_type: Literal["uniform"] = "uniform"
+    low: float = Field(ge=0)
+    high: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def low_le_high(self) -> "UniformDistribution":
+        if self.low > self.high:
+            raise ValueError("low must be ≤ high")
+        return self
+
+
+class TruncatedNormalDistribution(BaseModel):
+    dist_type: Literal["truncated_normal"] = "truncated_normal"
+    low: float = Field(ge=0)
+    high: float = Field(ge=0)
+    mean: float
+    stddev: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "TruncatedNormalDistribution":
+        if self.low > self.high:
+            raise ValueError("low must be ≤ high")
+        if not (self.low <= self.mean <= self.high):
+            raise ValueError("mean must be within [low, high]")
+        return self
+
+
+SpendingDistribution = Annotated[
+    FlatDistribution | UniformDistribution | TruncatedNormalDistribution,
+    Field(discriminator="dist_type"),
+]
+
+
 class SimulationInput(BaseModel):
     cash_value: float
     market_value: float
     bond_value: float
     annual_contribution: float
-    annual_spending: float
+    spending_distribution: SpendingDistribution = Field(
+        default_factory=lambda: FlatDistribution(value=0.0)
+    )
     years_to_simulate: int
     sample_years: int | None = None
     filing_status: FilingStatus | None = None
@@ -28,11 +75,11 @@ class SimulationInput(BaseModel):
             raise ValueError("Dollar values must be non-negative")
         return v
 
-    @field_validator("annual_contribution", "annual_spending")
+    @field_validator("annual_contribution")
     @classmethod
-    def flows_non_negative(cls, v: float) -> float:
+    def contribution_non_negative(cls, v: float) -> float:
         if v < 0:
-            raise ValueError("Annual flows must be non-negative")
+            raise ValueError("Annual contribution must be non-negative")
         return v
 
     @field_validator("other_income")
