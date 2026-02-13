@@ -3,6 +3,7 @@ import numpy.typing as npt
 
 from vibe_carlo.schemas import SimulationInput, SimulationResult
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
+from vibe_carlo.simulation.tax import gross_up_withdrawal
 
 
 def run_simulation(
@@ -18,6 +19,16 @@ def run_simulation(
     assert params.sample_years is not None
     block_len = params.sample_years
     n_historical = len(historical_data)
+
+    # Compute gross withdrawal (pre-tax) if tax adjustment is active
+    if params.filing_status is not None:
+        gross_withdrawal = gross_up_withdrawal(
+            params.annual_spending,
+            params.filing_status,
+            params.other_income,
+        )
+    else:
+        gross_withdrawal = params.annual_spending
 
     total_portfolio = params.cash_value + params.market_value + params.bond_value
     market_alloc = params.market_value / total_portfolio
@@ -52,7 +63,7 @@ def run_simulation(
     for y in range(years):
         value = portfolios[:, y]
         value = value * (1 + real_return[:, y])
-        value = value + params.annual_contribution - params.annual_spending
+        value = value + params.annual_contribution - gross_withdrawal
         value = np.maximum(value, 0.0)  # Floor at $0
         portfolios[:, y + 1] = value
         ever_hit_zero |= value == 0.0
@@ -71,6 +82,16 @@ def run_simulation(
 
     final_year_distribution = portfolios[:, -1].tolist()
 
+    # Tax info for results (only when tax adjustment is active)
+    result_gross: float | None = None
+    result_etr: float | None = None
+    if params.filing_status is not None:
+        result_gross = gross_withdrawal
+        if gross_withdrawal > 0:
+            result_etr = (gross_withdrawal - params.annual_spending) / gross_withdrawal
+        else:
+            result_etr = 0.0
+
     return SimulationResult(
         year_labels=year_labels,
         percentiles={
@@ -82,6 +103,8 @@ def run_simulation(
         },
         success_rate=success_rate,
         final_year_distribution=final_year_distribution,
+        gross_withdrawal=result_gross,
+        effective_tax_rate=result_etr,
     )
 
 

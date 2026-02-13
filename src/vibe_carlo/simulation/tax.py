@@ -1,0 +1,141 @@
+"""Federal income tax computation for retirement withdrawal gross-up.
+
+Uses 2026 tax brackets and standard deductions per IRS inflation adjustments.
+All withdrawals assumed to be ordinary income (traditional IRA/401k).
+"""
+
+from vibe_carlo.schemas import FilingStatus
+
+# 2026 federal tax rates (progressive brackets)
+RATES: list[float] = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
+
+# Bracket upper bounds (taxable income) by filing status.
+# Each list has 7 entries; the last is effectively infinity.
+_INF = float("inf")
+
+BRACKETS: dict[FilingStatus, list[float]] = {
+    FilingStatus.single: [12_400, 50_400, 105_700, 201_775, 256_225, 640_600, _INF],
+    FilingStatus.married_jointly: [
+        24_800,
+        100_800,
+        211_400,
+        403_550,
+        512_450,
+        768_700,
+        _INF,
+    ],
+    FilingStatus.married_separately: [
+        12_400,
+        50_400,
+        105_700,
+        201_775,
+        256_225,
+        384_350,
+        _INF,
+    ],
+    FilingStatus.head_of_household: [
+        17_700,
+        67_450,
+        105_700,
+        201_750,
+        256_200,
+        640_600,
+        _INF,
+    ],
+}
+
+STANDARD_DEDUCTION: dict[FilingStatus, float] = {
+    FilingStatus.single: 16_100.0,
+    FilingStatus.married_jointly: 32_200.0,
+    FilingStatus.married_separately: 16_100.0,
+    FilingStatus.head_of_household: 24_150.0,
+}
+
+
+def compute_tax(taxable_income: float, filing_status: FilingStatus) -> float:
+    """Compute progressive federal income tax on taxable income (after deduction)."""
+    if taxable_income <= 0:
+        return 0.0
+
+    brackets = BRACKETS[filing_status]
+    tax = 0.0
+    prev_bound = 0.0
+
+    for rate, upper in zip(RATES, brackets):
+        if taxable_income <= prev_bound:
+            break
+        bracket_income = min(taxable_income, upper) - prev_bound
+        tax += bracket_income * rate
+        prev_bound = upper
+
+    return tax
+
+
+def gross_up_withdrawal(
+    desired_spending: float,
+    filing_status: FilingStatus,
+    other_income: float = 0.0,
+) -> float:
+    """Compute the gross (pre-tax) withdrawal needed to yield desired_spending after tax.
+
+    The marginal tax on the withdrawal is: tax(other_income + W) - tax(other_income).
+    This function finds W such that W - marginal_tax(W) = desired_spending.
+
+    Algorithm (exact, analytical, O(7)):
+    1. Compute how much of the standard deduction remains after other_income.
+    2. Compute where on the bracket schedule the withdrawal taxation starts.
+    3. Fill the deduction remainder at 0% rate, then walk brackets.
+    4. Each $1 gross at rate r yields $(1-r) after-tax.
+    """
+    if desired_spending <= 0:
+        return 0.0
+
+    std_ded = STANDARD_DEDUCTION[filing_status]
+    brackets = BRACKETS[filing_status]
+
+    deduction_remaining = max(0.0, std_ded - other_income)
+    other_taxable = max(0.0, other_income - std_ded)
+
+    after_tax_remaining = desired_spending
+    gross = 0.0
+
+    # Phase 1: consume remaining standard deduction (tax-free)
+    if deduction_remaining > 0 and after_tax_remaining > 0:
+        use = min(deduction_remaining, after_tax_remaining)
+        gross += use
+        after_tax_remaining -= use
+
+    if after_tax_remaining <= 0:
+        return gross
+
+    # Phase 2: walk brackets starting from where other_taxable sits
+    prev_bound = 0.0
+    for rate, upper in zip(RATES, brackets):
+        if after_tax_remaining <= 0:
+            break
+
+        # Skip brackets already fully consumed by other_taxable
+        if other_taxable >= upper:
+            prev_bound = upper
+            continue
+
+        # Bracket space available for withdrawal
+        bracket_start = max(prev_bound, other_taxable)
+        bracket_capacity = upper - bracket_start  # gross space in this bracket
+
+        # Each $1 gross at this rate yields $(1-rate) after-tax
+        after_tax_per_dollar = 1.0 - rate
+        after_tax_capacity = bracket_capacity * after_tax_per_dollar
+
+        if after_tax_remaining <= after_tax_capacity:
+            # This bracket has enough room
+            gross += after_tax_remaining / after_tax_per_dollar
+            after_tax_remaining = 0.0
+        else:
+            # Fill entire bracket
+            gross += bracket_capacity
+            after_tax_remaining -= after_tax_capacity
+
+        prev_bound = upper
+
+    return gross

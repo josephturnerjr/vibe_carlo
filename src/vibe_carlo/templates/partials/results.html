@@ -11,6 +11,24 @@
         <p class="text-xs text-gray-400 mt-1">of 10,000 simulations never reached $0</p>
     </div>
 
+    {% if result.gross_withdrawal is not none %}
+    <!-- Tax Adjustment Info -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <p class="text-sm text-gray-500 uppercase tracking-wide mb-2">Federal Tax Adjustment</p>
+        <div class="grid grid-cols-2 gap-4 text-center">
+            <div>
+                <p class="text-2xl font-bold text-gray-800">${{ "{:,.0f}".format(result.gross_withdrawal) }}</p>
+                <p class="text-xs text-gray-400">Gross withdrawal / year</p>
+            </div>
+            <div>
+                <p class="text-2xl font-bold text-gray-800">{{ "%.1f"|format(result.effective_tax_rate * 100) }}%</p>
+                <p class="text-xs text-gray-400">Effective tax rate</p>
+            </div>
+        </div>
+        <p class="text-xs text-gray-400 mt-3">To spend ${{ "{:,.0f}".format(params.annual_spending) }} after tax, ${{ "{:,.0f}".format(result.gross_withdrawal) }} must be withdrawn to cover federal income tax.</p>
+    </div>
+    {% endif %}
+
     <!-- Fan Chart -->
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h3 class="text-lg font-semibold text-gray-700 mb-4">Portfolio Projection (real dollars)</h3>

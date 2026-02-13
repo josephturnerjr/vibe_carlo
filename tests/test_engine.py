@@ -139,6 +139,51 @@ def test_starting_value_correct() -> None:
         assert result.percentiles[key][0] == total
 
 
+def test_tax_enabled_increases_effective_withdrawal() -> None:
+    data = load_historical_data()
+    params_no_tax = _make_params(
+        cash_value=0.0,
+        market_value=1_000_000.0,
+        bond_value=0.0,
+        annual_spending=50_000.0,
+        annual_contribution=0.0,
+    )
+    params_tax = _make_params(
+        cash_value=0.0,
+        market_value=1_000_000.0,
+        bond_value=0.0,
+        annual_spending=50_000.0,
+        annual_contribution=0.0,
+        filing_status="single",
+        other_income=0.0,
+    )
+    result_no_tax = run_simulation(params_no_tax, data, n_runs=1000, seed=42)
+    result_tax = run_simulation(params_tax, data, n_runs=1000, seed=42)
+
+    # Tax adjustment means larger withdrawals → lower success rate
+    assert result_tax.success_rate < result_no_tax.success_rate
+    assert result_tax.gross_withdrawal is not None
+    assert result_tax.gross_withdrawal > 50_000.0
+    assert result_tax.effective_tax_rate is not None
+    assert result_tax.effective_tax_rate > 0.0
+
+
+def test_filing_status_none_identical_to_omitted() -> None:
+    data = load_historical_data()
+    params_omitted = _make_params(annual_spending=40_000.0, annual_contribution=0.0)
+    params_none = _make_params(
+        annual_spending=40_000.0,
+        annual_contribution=0.0,
+        filing_status=None,
+    )
+    result_omitted = run_simulation(params_omitted, data, n_runs=100, seed=42)
+    result_none = run_simulation(params_none, data, n_runs=100, seed=42)
+
+    assert result_omitted.success_rate == result_none.success_rate
+    assert result_omitted.gross_withdrawal is None
+    assert result_none.gross_withdrawal is None
+
+
 def test_historical_data_shape() -> None:
     data = load_historical_data()
     assert data.ndim == 2

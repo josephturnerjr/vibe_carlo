@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
-from vibe_carlo.schemas import SimulationInput
+from vibe_carlo.schemas import FilingStatus, SimulationInput
 from vibe_carlo.simulation.engine import run_simulation
 from vibe_carlo.simulation.models import load_historical_data
 
@@ -46,6 +46,8 @@ async def simulate(
     annual_spending: float = Form(default=0.0),
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
+    filing_status: str | None = Form(default=None),
+    other_income: float = Form(default=0.0),
 ) -> HTMLResponse | JSONResponse:
     try:
         params = SimulationInput(
@@ -56,9 +58,14 @@ async def simulate(
             annual_spending=annual_spending,
             years_to_simulate=years_to_simulate,
             sample_years=sample_years,
+            filing_status=FilingStatus(filing_status) if filing_status else None,
+            other_income=other_income,
         )
-    except ValidationError as e:
-        messages = [err.get("msg", "Validation error") for err in e.errors()]
+    except (ValidationError, ValueError) as e:
+        if isinstance(e, ValidationError):
+            messages = [err.get("msg", "Validation error") for err in e.errors()]
+        else:
+            messages = [str(e)]
         return JSONResponse(status_code=422, content={"detail": messages})
 
     result = run_simulation(params, historical_data)

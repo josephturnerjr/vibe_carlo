@@ -54,6 +54,58 @@ def test_simulate_with_sample_years(client: TestClient) -> None:
     assert "Portfolio Survival Rate" in response.text
 
 
+def test_simulate_with_tax_settings(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "0",
+            "market_value": "500000",
+            "bond_value": "0",
+            "annual_contribution": "0",
+            "annual_spending": "50000",
+            "years_to_simulate": "10",
+            "filing_status": "single",
+            "other_income": "20000",
+        },
+    )
+    assert response.status_code == 200
+    assert "Portfolio Survival Rate" in response.text
+    assert "Federal Tax Adjustment" in response.text
+    assert "Gross withdrawal" in response.text
+
+
+def test_simulate_without_filing_status_no_tax_card(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "10000",
+            "market_value": "70000",
+            "bond_value": "20000",
+            "annual_contribution": "12000",
+            "annual_spending": "0",
+            "years_to_simulate": "10",
+        },
+    )
+    assert response.status_code == 200
+    assert "Federal Tax Adjustment" not in response.text
+
+
+def test_simulate_invalid_filing_status(client: TestClient) -> None:
+    response = client.post(
+        "/simulate",
+        data={
+            "cash_value": "10000",
+            "market_value": "70000",
+            "bond_value": "20000",
+            "annual_contribution": "0",
+            "annual_spending": "5000",
+            "years_to_simulate": "10",
+            "filing_status": "invalid_status",
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_simulate_validation_error_zero_portfolio(client: TestClient) -> None:
     response = client.post(
         "/simulate",
