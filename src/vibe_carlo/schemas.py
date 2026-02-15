@@ -106,3 +106,19 @@ class SimulationResult(BaseModel):
     final_year_distribution: list[float]
     gross_withdrawal: float | None = None
     effective_tax_rate: float | None = None
+
+
+class SnapshotRow(BaseModel):
+    id: int
+    name: str | None = None
+    snapshot_date: str
+    cash_value: float
+    market_value: float
+    bond_value: float
+    earnings: float = 0.0
+    spending_distribution: SpendingDistribution
+    years_to_simulate: int
+    sample_years: int | None = None
+    filing_status: FilingStatus | None = None
+    created_at: str | None = None
+    updated_at: str | None = None

@@ -1,61 +1,75 @@
-# Phase 2 — Implementation Plan
-
-## New Dependencies
-- `sqlalchemy` — ORM
-- `alembic` — database migrations
-- `aiosqlite` — async SQLite driver for SQLAlchemy
-- Auth library (TBD: evaluate `fastapi-users`, `authlib`, or custom)
-- `argon2-cffi` — password hashing (if custom auth)
-- `itsdangerous` — session signing
+# Phase 2: Saved Snapshots — Implementation Steps & Test Plan
 
 ## Implementation Steps
 
-### 1. Database Setup
-- Add SQLAlchemy models for `users`, `snapshots`, `accounts`
-- Configure async SQLAlchemy engine with SQLite
-- Set up Alembic for migrations
-- Create initial migration
+### Step 1: Database layer (`src/vibe_carlo/db.py`)
+- `get_db_path()` — resolves DB path from `VIBE_CARLO_DB` env var or `~/.vibe_carlo/snapshots.db`
+- `init_db(db_path)` — creates parent directory + `snapshots` table if not exists
+- `get_connection(db_path)` — returns `sqlite3.Connection` with `row_factory = sqlite3.Row`
 
-### 2. Authentication
-- Evaluate auth approach: `fastapi-users` (batteries-included) vs. custom (more control)
-- Implement: registration, login, logout, password reset
-- Session middleware with secure, httponly, samesite cookies
-- CSRF protection on all form POSTs
-- Protected routes (dashboard, snapshots) require login
-- Simulation page remains accessible without login
+### Step 2: Snapshot CRUD (`src/vibe_carlo/snapshots.py`)
+- `create_snapshot(conn, name, date, params: SimulationInput) → int`
+- `get_snapshot(conn, id) → dict | None`
+- `list_snapshots(conn) → list[dict]` — ordered by `snapshot_date DESC, id DESC`
+- `update_snapshot(conn, id, name, date, params: SimulationInput) → bool`
+- `delete_snapshot(conn, id) → bool`
+- Distribution serialized via `json.dumps(dist.model_dump())`, deserialized via `TypeAdapter`
 
-### 3. Snapshot Storage
-- After simulation, offer "Save Snapshot" button (requires login)
-- Store inputs as JSON, store computed outputs as JSON
-- Snapshot list view on dashboard, sorted by date
-- "Re-run" button to load a snapshot's inputs into the simulation form
+### Step 3: Schema additions (`src/vibe_carlo/schemas.py`)
+- `SnapshotRow` Pydantic model with all DB columns as typed fields
 
-### 4. Back-Testing
-- When saving a new snapshot, optionally enter current actual portfolio value
-- Back-test view: select a previous snapshot, overlay actual value on its fan chart
-- Compute which percentile band the actual value falls in
-- Show trajectory: line connecting actual values across snapshots over time
+### Step 4: Routes (`src/vibe_carlo/app.py`)
+- `_parse_form_params()` — extracted helper for form → `SimulationInput` conversion
+- `_snapshot_to_row()` — converts raw DB dict → typed `SnapshotRow`
+- `init_db()` called in `lifespan`
+- `GET /` — accepts optional `snapshot_id` query param, passes `SnapshotRow` to template
+- `GET /snapshots` — renders snapshot table
+- `POST /snapshots/save` — validates + creates snapshot, returns HTMX feedback
+- `POST /snapshots/{id}/update` — validates + updates, returns HTMX feedback
+- `DELETE /snapshots/{id}` — deletes, returns empty HTML for HTMX row removal
 
-### 5. Multiple Account Types
-- UI for managing financial accounts (add/edit/delete)
-- Each account has: name, type, balance, contribution, allocation
-- Simulation aggregates across all accounts
-- Per-account results breakdown in output
+### Step 5: Templates
+- `base.html` — added nav bar with "Simulation" and "Snapshots" links
+- `index.html` — form values pre-filled from `snapshot` context; save/update section below form; JS `htmx:configRequest` handler collects form + snapshot fields
+- `snapshots.html` — table with inline Plotly mini-charts for distribution columns
 
-### 6. Expanded Asset Classes
-- Update `historical_returns.csv` with additional columns (international stocks, cash)
-- Update simulation engine to handle N asset classes with per-account allocations
-- Weighted return calculation becomes a dot product of allocation vector and returns vector
+## Test Plan
 
-### 7. Deployment Updates
-- Add Docker volume mount for SQLite DB in `docker-compose.yml`
-- Add backup script (cron job to copy SQLite file to a backup location)
-- Enforce HTTPS redirects (Caddy handles this)
+### `tests/test_snapshots.py` — CRUD unit tests (14 tests)
 
-## Security Additions
-- Password hashing with Argon2
-- CSRF tokens on all forms
-- Rate limiting on auth endpoints (prevent brute force)
-- Content Security Policy headers
-- Input sanitization (Jinja2 autoescaping already handles most XSS)
-- Parameterized queries via SQLAlchemy (prevents SQL injection)
+**Happy path:**
+1. `test_create_and_get_snapshot` — create with flat distribution, retrieve by ID, verify all fields
+2. `test_create_snapshot_uniform_distribution` — verify JSON round-trip for uniform dist
+3. `test_create_snapshot_truncated_normal` — verify JSON round-trip for truncated normal dist
+4. `test_create_snapshot_with_name` — optional name stored and returned
+5. `test_create_snapshot_without_name` — name is None when omitted
+6. `test_list_snapshots_ordered_by_date` — 3 snapshots with different dates, verify sort order
+7. `test_update_snapshot` — create, update values + date, verify changes persisted
+8. `test_delete_snapshot` — create, delete, verify get returns None
+
+**Edge cases:**
+9. `test_get_nonexistent_snapshot` — returns None
+10. `test_delete_nonexistent_snapshot` — returns False
+11. `test_update_nonexistent_snapshot` — returns False
+12. `test_multiple_snapshots_same_date` — both stored and returned
+13. `test_snapshot_with_all_optional_fields_none` — name=None, filing_status=None
+14. `test_snapshot_preserves_filing_status` — all 4 filing statuses round-trip correctly
+
+### `tests/test_snapshot_api.py` — API integration tests (13 tests)
+
+**Happy path:**
+15. `test_snapshots_page_renders` — GET /snapshots returns 200
+16. `test_save_snapshot_from_form` — POST /snapshots/save with valid form data
+17. `test_load_snapshot_into_form` — GET /?snapshot_id=N pre-fills form
+18. `test_update_snapshot_via_api` — POST /snapshots/{id}/update modifies record
+19. `test_delete_snapshot_via_api` — DELETE /snapshots/{id} removes row
+20. `test_snapshot_round_trip` — save → list → load → update → verify
+
+**Edge cases / validation:**
+21. `test_save_snapshot_missing_date` — returns 422
+22. `test_save_snapshot_zero_portfolio` — returns 422
+23. `test_load_nonexistent_snapshot` — returns 404
+24. `test_delete_nonexistent_snapshot` — returns 404
+25. `test_update_nonexistent_snapshot` — returns 404
+26. `test_save_snapshot_each_distribution_type` — flat, uniform, truncated_normal all save
+27. `test_snapshots_page_empty` — shows empty state message

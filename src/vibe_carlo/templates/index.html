@@ -2,7 +2,7 @@
 {% from "partials/distribution_picker.html" import distribution_picker %}
 
 {% block content %}
-<form
+<form id="sim-form"
     hx-post="/simulate"
     hx-target="#results"
     hx-swap="innerHTML"
@@ -13,17 +13,17 @@
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
             <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
-            <input type="number" name="cash_value" id="cash_value" value="300000" min="0" step="1000"
+            <input type="number" name="cash_value" id="cash_value" value="{{ snapshot.cash_value if snapshot else 300000 }}" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="market_value" class="block text-sm font-medium text-gray-600 mb-1">Market / Stocks ($)</label>
-            <input type="number" name="market_value" id="market_value" value="2000000" min="0" step="1000"
+            <input type="number" name="market_value" id="market_value" value="{{ snapshot.market_value if snapshot else 2000000 }}" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="bond_value" class="block text-sm font-medium text-gray-600 mb-1">Bonds ($)</label>
-            <input type="number" name="bond_value" id="bond_value" value="0" min="0" step="1000"
+            <input type="number" name="bond_value" id="bond_value" value="{{ snapshot.bond_value if snapshot else 0 }}" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
     </div>
@@ -32,12 +32,22 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
             <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
-            <input type="number" name="earnings" id="earnings" value="400000" min="0" step="1000"
+            <input type="number" name="earnings" id="earnings" value="{{ snapshot.earnings if snapshot else 400000 }}" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             <p class="text-xs text-gray-400 mt-1">Post-tax income from all sources (salary, Social Security, pension, etc.)</p>
         </div>
         <div>
-            {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000, default_dist_type="truncated_normal", default_low=55000, default_high=100000, default_mean=74000, default_stddev=5000) }}
+            {% if snapshot %}
+                {% if snapshot.spending_distribution.dist_type == "flat" %}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=snapshot.spending_distribution.value, step=1000, default_dist_type="flat") }}
+                {% elif snapshot.spending_distribution.dist_type == "uniform" %}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1000, default_dist_type="uniform", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high) }}
+                {% elif snapshot.spending_distribution.dist_type == "truncated_normal" %}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1000, default_dist_type="truncated_normal", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high, default_mean=snapshot.spending_distribution.mean, default_stddev=snapshot.spending_distribution.stddev) }}
+                {% endif %}
+            {% else %}
+                {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000, default_dist_type="truncated_normal", default_low=55000, default_high=100000, default_mean=74000, default_stddev=5000) }}
+            {% endif %}
         </div>
     </div>
 
@@ -47,11 +57,12 @@
         <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
         <select name="filing_status" id="filing_status"
                 class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
-            <option value="">None (no tax adjustment)</option>
-            <option value="single" selected>Single</option>
-            <option value="married_jointly">Married Filing Jointly</option>
-            <option value="married_separately">Married Filing Separately</option>
-            <option value="head_of_household">Head of Household</option>
+            {% set fs = snapshot.filing_status if snapshot else "single" %}
+            <option value="" {{ "selected" if not fs }}>None (no tax adjustment)</option>
+            <option value="single" {{ "selected" if fs == "single" }}>Single</option>
+            <option value="married_jointly" {{ "selected" if fs == "married_jointly" }}>Married Filing Jointly</option>
+            <option value="married_separately" {{ "selected" if fs == "married_separately" }}>Married Filing Separately</option>
+            <option value="head_of_household" {{ "selected" if fs == "head_of_household" }}>Head of Household</option>
         </select>
     </div>
 
@@ -59,7 +70,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
             <label for="years_to_simulate" class="block text-sm font-medium text-gray-600 mb-1">Years to simulate</label>
-            <input type="number" name="years_to_simulate" id="years_to_simulate" value="30" min="1" max="80"
+            <input type="number" name="years_to_simulate" id="years_to_simulate" value="{{ snapshot.years_to_simulate if snapshot else 30 }}" min="1" max="80"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
@@ -68,6 +79,7 @@
                 <div class="mt-2">
                     <label for="sample_years" class="block text-sm font-medium text-gray-600 mb-1">Sample block length (years)</label>
                     <input type="number" name="sample_years" id="sample_years" placeholder="Same as simulation years" min="1" max="80"
+                           {% if snapshot and snapshot.sample_years %}value="{{ snapshot.sample_years }}"{% endif %}
                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
                     <p class="text-xs text-gray-400 mt-1">Length of contiguous historical blocks to sample</p>
                 </div>
@@ -81,6 +93,43 @@
     </button>
 </form>
 
+<!-- Snapshot save/update section -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-4 space-y-4">
+    <h2 class="text-lg font-semibold text-gray-700">Save Snapshot</h2>
+    <p class="text-xs text-gray-400 -mt-2">Save the current parameters as a dated snapshot for future reference.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="snapshot_name" class="block text-sm font-medium text-gray-600 mb-1">Name (optional)</label>
+            <input type="text" id="snapshot_name" value="{{ snapshot.name or '' }}" placeholder="e.g. Retirement baseline"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="snapshot_date" class="block text-sm font-medium text-gray-600 mb-1">Date</label>
+            <input type="date" id="snapshot_date" value="{{ snapshot.snapshot_date if snapshot else '' }}" required
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+    </div>
+    <div class="flex gap-3">
+        <button type="button" id="save-snapshot-btn"
+                hx-post="/snapshots/save"
+                hx-target="#snapshot-feedback"
+                hx-swap="innerHTML"
+                class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm">
+            Save Snapshot
+        </button>
+        {% if snapshot %}
+        <button type="button" id="update-snapshot-btn"
+                hx-post="/snapshots/{{ snapshot.id }}/update"
+                hx-target="#snapshot-feedback"
+                hx-swap="innerHTML"
+                class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm">
+            Update Snapshot
+        </button>
+        {% endif %}
+    </div>
+    <div id="snapshot-feedback"></div>
+</div>
+
 <div id="spinner" class="htmx-indicator text-center py-8">
     <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
     <p class="text-sm text-gray-500 mt-2">Running 10,000 simulations...</p>
@@ -89,6 +138,24 @@
 <div id="results" class="mt-8"></div>
 
 <script>
+// Collect form + snapshot fields for HTMX snapshot requests
+document.addEventListener('htmx:configRequest', function(evt) {
+    var trigger = evt.detail.elt;
+    if (trigger.id !== 'save-snapshot-btn' && trigger.id !== 'update-snapshot-btn') return;
+
+    var form = document.getElementById('sim-form');
+    var formData = new FormData(form);
+
+    // Add form fields to the HTMX request
+    for (var [key, value] of formData.entries()) {
+        evt.detail.parameters[key] = value;
+    }
+
+    // Add snapshot-specific fields
+    evt.detail.parameters['snapshot_name'] = document.getElementById('snapshot_name').value;
+    evt.detail.parameters['snapshot_date'] = document.getElementById('snapshot_date').value;
+});
+
 function renderCharts() {
     var dataEl = document.getElementById('chart-data');
     if (!dataEl) return;
