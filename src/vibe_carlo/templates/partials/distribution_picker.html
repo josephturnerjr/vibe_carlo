@@ -1,4 +1,4 @@
-{% macro distribution_picker(prefix, label, default_value=0, step=1000) %}
+{% macro distribution_picker(prefix, label, default_value=0, step=1000, default_dist_type="flat", default_low=0, default_high=0, default_mean=0, default_stddev=5000) %}
 <div class="space-y-3">
     <label class="block text-sm font-medium text-gray-600">{{ label }}</label>
 
@@ -6,33 +6,34 @@
     <select name="{{ prefix }}_dist_type" id="{{ prefix }}_dist_type"
             onchange="updateDistFields('{{ prefix }}')"
             class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2 text-sm">
-        <option value="flat" selected>Fixed Amount</option>
-        <option value="uniform">Uniform (range)</option>
-        <option value="truncated_normal">Normal (bell curve)</option>
+        <option value="flat" {{ "selected" if default_dist_type == "flat" }}>Fixed Amount</option>
+        <option value="uniform" {{ "selected" if default_dist_type == "uniform" }}>Uniform (range)</option>
+        <option value="truncated_normal" {{ "selected" if default_dist_type == "truncated_normal" }}>Normal (bell curve)</option>
     </select>
 
     <!-- Flat: single value -->
-    <div id="{{ prefix }}_flat_fields">
+    <div id="{{ prefix }}_flat_fields" {{ 'class="hidden"' if default_dist_type != "flat" }}>
         <input type="number" name="{{ prefix }}_dist_value" id="{{ prefix }}_dist_value"
                value="{{ default_value }}" min="0" step="{{ step }}"
+               {{ "disabled" if default_dist_type != "flat" }}
                oninput="updateDistPreview('{{ prefix }}')"
                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
     </div>
 
     <!-- Uniform: low + high -->
-    <div id="{{ prefix }}_uniform_fields" class="hidden">
+    <div id="{{ prefix }}_uniform_fields" {{ 'class="hidden"' if default_dist_type != "uniform" }}>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
                 <input type="number" name="{{ prefix }}_dist_low" id="{{ prefix }}_u_low"
-                       value="0" min="0" step="{{ step }}" disabled
+                       value="{{ default_low }}" min="0" step="{{ step }}" {{ "disabled" if default_dist_type != "uniform" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>
             <div>
                 <label class="block text-xs text-gray-500 mb-1">High ($)</label>
                 <input type="number" name="{{ prefix }}_dist_high" id="{{ prefix }}_u_high"
-                       value="0" min="0" step="{{ step }}" disabled
+                       value="{{ default_high }}" min="0" step="{{ step }}" {{ "disabled" if default_dist_type != "uniform" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>
@@ -40,33 +41,33 @@
     </div>
 
     <!-- Truncated Normal: low, high, mean, stddev -->
-    <div id="{{ prefix }}_truncated_normal_fields" class="hidden">
+    <div id="{{ prefix }}_truncated_normal_fields" {{ 'class="hidden"' if default_dist_type != "truncated_normal" }}>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
                 <input type="number" name="{{ prefix }}_dist_low" id="{{ prefix }}_tn_low"
-                       value="0" min="0" step="{{ step }}" disabled
+                       value="{{ default_low }}" min="0" step="{{ step }}" {{ "disabled" if default_dist_type != "truncated_normal" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>
             <div>
                 <label class="block text-xs text-gray-500 mb-1">High ($)</label>
                 <input type="number" name="{{ prefix }}_dist_high" id="{{ prefix }}_tn_high"
-                       value="0" min="0" step="{{ step }}" disabled
+                       value="{{ default_high }}" min="0" step="{{ step }}" {{ "disabled" if default_dist_type != "truncated_normal" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Mean ($)</label>
                 <input type="number" name="{{ prefix }}_dist_mean" id="{{ prefix }}_tn_mean"
-                       value="0" min="0" step="{{ step }}" disabled
+                       value="{{ default_mean }}" min="0" step="{{ step }}" {{ "disabled" if default_dist_type != "truncated_normal" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Std Dev ($)</label>
                 <input type="number" name="{{ prefix }}_dist_stddev" id="{{ prefix }}_tn_stddev"
-                       value="5000" min="1" step="{{ step }}" disabled
+                       value="{{ default_stddev }}" min="1" step="any" {{ "disabled" if default_dist_type != "truncated_normal" }}
                        oninput="updateDistPreview('{{ prefix }}')"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             </div>

@@ -66,7 +66,7 @@ async def simulate(
     cash_value: float = Form(default=0.0),
     market_value: float = Form(default=0.0),
     bond_value: float = Form(default=0.0),
-    annual_contribution: float = Form(default=0.0),
+    earnings: float = Form(default=0.0),
     spending_dist_type: str = Form(default="flat"),
     spending_dist_value: float = Form(default=0.0),
     spending_dist_low: float = Form(default=0.0),
@@ -76,7 +76,6 @@ async def simulate(
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
     filing_status: str | None = Form(default=None),
-    other_income: float = Form(default=0.0),
 ) -> HTMLResponse | JSONResponse:
     try:
         spending_dist = _parse_distribution(
@@ -91,12 +90,11 @@ async def simulate(
             cash_value=cash_value,
             market_value=market_value,
             bond_value=bond_value,
-            annual_contribution=annual_contribution,
+            earnings=earnings,
             spending_distribution=spending_dist,
             years_to_simulate=years_to_simulate,
             sample_years=sample_years,
             filing_status=FilingStatus(filing_status) if filing_status else None,
-            other_income=other_income,
         )
     except (ValidationError, ValueError) as e:
         if isinstance(e, ValidationError):

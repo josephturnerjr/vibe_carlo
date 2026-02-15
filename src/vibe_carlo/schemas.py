@@ -59,14 +59,13 @@ class SimulationInput(BaseModel):
     cash_value: float
     market_value: float
     bond_value: float
-    annual_contribution: float
+    earnings: float = 0.0
     spending_distribution: SpendingDistribution = Field(
         default_factory=lambda: FlatDistribution(value=0.0)
     )
     years_to_simulate: int
     sample_years: int | None = None
     filing_status: FilingStatus | None = None
-    other_income: float = 0.0
 
     @field_validator("cash_value", "market_value", "bond_value")
     @classmethod
@@ -75,18 +74,11 @@ class SimulationInput(BaseModel):
             raise ValueError("Dollar values must be non-negative")
         return v
 
-    @field_validator("annual_contribution")
+    @field_validator("earnings")
     @classmethod
-    def contribution_non_negative(cls, v: float) -> float:
+    def earnings_non_negative(cls, v: float) -> float:
         if v < 0:
-            raise ValueError("Annual contribution must be non-negative")
-        return v
-
-    @field_validator("other_income")
-    @classmethod
-    def other_income_non_negative(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("Other income must be non-negative")
+            raise ValueError("Earnings must be non-negative")
         return v
 
     @field_validator("years_to_simulate")

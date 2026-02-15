@@ -13,17 +13,17 @@
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
             <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
-            <input type="number" name="cash_value" id="cash_value" value="10000" min="0" step="1000"
+            <input type="number" name="cash_value" id="cash_value" value="300000" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="market_value" class="block text-sm font-medium text-gray-600 mb-1">Market / Stocks ($)</label>
-            <input type="number" name="market_value" id="market_value" value="70000" min="0" step="1000"
+            <input type="number" name="market_value" id="market_value" value="2000000" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="bond_value" class="block text-sm font-medium text-gray-600 mb-1">Bonds ($)</label>
-            <input type="number" name="bond_value" id="bond_value" value="20000" min="0" step="1000"
+            <input type="number" name="bond_value" id="bond_value" value="0" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
     </div>
@@ -31,35 +31,28 @@
     <h2 class="text-lg font-semibold text-gray-700">Annual Cash Flows (real dollars)</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-            <label for="annual_contribution" class="block text-sm font-medium text-gray-600 mb-1">Contributions ($)</label>
-            <input type="number" name="annual_contribution" id="annual_contribution" value="12000" min="0" step="1000"
+            <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
+            <input type="number" name="earnings" id="earnings" value="400000" min="0" step="1000"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            <p class="text-xs text-gray-400 mt-1">Post-tax income from all sources (salary, Social Security, pension, etc.)</p>
         </div>
         <div>
-            {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000) }}
+            {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000, default_dist_type="truncated_normal", default_low=55000, default_high=100000, default_mean=74000, default_stddev=5000) }}
         </div>
     </div>
 
     <h2 class="text-lg font-semibold text-gray-700">Tax Settings (optional)</h2>
     <p class="text-xs text-gray-400 -mt-4">For traditional (pre-tax) retirement account withdrawals. Adjusts withdrawals to cover federal income tax.</p>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-            <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
-            <select name="filing_status" id="filing_status"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
-                <option value="">None (no tax adjustment)</option>
-                <option value="single">Single</option>
-                <option value="married_jointly">Married Filing Jointly</option>
-                <option value="married_separately">Married Filing Separately</option>
-                <option value="head_of_household">Head of Household</option>
-            </select>
-        </div>
-        <div>
-            <label for="other_income" class="block text-sm font-medium text-gray-600 mb-1">Other Annual Income ($)</label>
-            <input type="number" name="other_income" id="other_income" value="0" min="0" step="1000"
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
-            <p class="text-xs text-gray-400 mt-1">Social Security, pension, or other non-portfolio income</p>
-        </div>
+    <div>
+        <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
+        <select name="filing_status" id="filing_status"
+                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            <option value="">None (no tax adjustment)</option>
+            <option value="single" selected>Single</option>
+            <option value="married_jointly">Married Filing Jointly</option>
+            <option value="married_separately">Married Filing Separately</option>
+            <option value="head_of_household">Head of Household</option>
+        </select>
     </div>
 
     <h2 class="text-lg font-semibold text-gray-700">Simulation</h2>

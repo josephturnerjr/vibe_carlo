@@ -24,15 +24,18 @@ def run_simulation(
     # Sample spending: shape (n_runs, years)
     spending_samples = sample_spending(params.spending_distribution, n_runs, years, rng)
 
+    # Earnings cover spending first; only the shortfall requires a portfolio withdrawal
+    shortfall = np.maximum(spending_samples - params.earnings, 0.0)
+    surplus = np.maximum(params.earnings - spending_samples, 0.0)
+
     # Compute gross withdrawals (pre-tax) if tax adjustment is active
     if params.filing_status is not None:
         gross_withdrawals = gross_up_withdrawal_array(
-            spending_samples,
+            shortfall,
             params.filing_status,
-            params.other_income,
         )
     else:
-        gross_withdrawals = spending_samples
+        gross_withdrawals = shortfall
 
     total_portfolio = params.cash_value + params.market_value + params.bond_value
     market_alloc = params.market_value / total_portfolio
@@ -64,7 +67,7 @@ def run_simulation(
     for y in range(years):
         value = portfolios[:, y]
         value = value * (1 + real_return[:, y])
-        value = value + params.annual_contribution - gross_withdrawals[:, y]
+        value = value + surplus[:, y] - gross_withdrawals[:, y]
         value = np.maximum(value, 0.0)
         portfolios[:, y + 1] = value
         ever_hit_zero |= value == 0.0
@@ -87,10 +90,10 @@ def run_simulation(
     result_etr: float | None = None
     if params.filing_status is not None:
         mean_gross = float(np.mean(gross_withdrawals))
-        mean_spending = float(np.mean(spending_samples))
+        mean_shortfall = float(np.mean(shortfall))
         result_gross = mean_gross
         if mean_gross > 0:
-            result_etr = (mean_gross - mean_spending) / mean_gross
+            result_etr = (mean_gross - mean_shortfall) / mean_gross
         else:
             result_etr = 0.0
 

@@ -10,7 +10,7 @@ def _make_params(**overrides: object) -> SimulationInput:
         "cash_value": 10_000.0,
         "market_value": 70_000.0,
         "bond_value": 20_000.0,
-        "annual_contribution": 12_000.0,
+        "earnings": 12_000.0,
         "spending_distribution": FlatDistribution(value=0.0),
         "years_to_simulate": 30,
     }
@@ -53,18 +53,18 @@ def test_high_spending_lowers_success() -> None:
     data = load_historical_data()
     params = _make_params(
         spending_distribution=FlatDistribution(value=50_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
     )
     result = run_simulation(params, data, n_runs=1000, seed=42)
 
     assert result.success_rate < 1.0
 
 
-def test_zero_spending_with_contributions() -> None:
+def test_zero_spending_with_earnings() -> None:
     data = load_historical_data()
     params = _make_params(
         spending_distribution=FlatDistribution(value=0.0),
-        annual_contribution=20_000.0,
+        earnings=20_000.0,
     )
     result = run_simulation(params, data, n_runs=1000, seed=42)
 
@@ -112,7 +112,7 @@ def test_portfolio_floor_at_zero() -> None:
         market_value=100.0,
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=1_000_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
     )
     result = run_simulation(params, data, n_runs=100, seed=42)
 
@@ -145,16 +145,15 @@ def test_tax_enabled_increases_effective_withdrawal() -> None:
         market_value=1_000_000.0,
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=50_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
     )
     params_tax = _make_params(
         cash_value=0.0,
         market_value=1_000_000.0,
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=50_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
         filing_status="single",
-        other_income=0.0,
     )
     result_no_tax = run_simulation(params_no_tax, data, n_runs=1000, seed=42)
     result_tax = run_simulation(params_tax, data, n_runs=1000, seed=42)
@@ -170,11 +169,11 @@ def test_filing_status_none_identical_to_omitted() -> None:
     data = load_historical_data()
     params_omitted = _make_params(
         spending_distribution=FlatDistribution(value=40_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
     )
     params_none = _make_params(
         spending_distribution=FlatDistribution(value=40_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
         filing_status=None,
     )
     result_omitted = run_simulation(params_omitted, data, n_runs=100, seed=42)
@@ -201,7 +200,7 @@ def test_uniform_distribution_produces_variable_results() -> None:
         market_value=500_000.0,
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=50_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
         years_to_simulate=10,
     )
     params_uniform = _make_params(
@@ -209,7 +208,7 @@ def test_uniform_distribution_produces_variable_results() -> None:
         market_value=500_000.0,
         bond_value=0.0,
         spending_distribution=UniformDistribution(low=40_000.0, high=60_000.0),
-        annual_contribution=0.0,
+        earnings=0.0,
         years_to_simulate=10,
     )
     result_flat = run_simulation(params_flat, data, n_runs=1000, seed=42)
@@ -220,3 +219,66 @@ def test_uniform_distribution_produces_variable_results() -> None:
     assert 0.0 <= result_uniform.success_rate <= 1.0
     # Results won't be identical due to different spending patterns
     assert result_flat.percentiles["p50"] != result_uniform.percentiles["p50"]
+
+
+def test_earnings_surplus_added_to_portfolio() -> None:
+    """When earnings > spending, the surplus is deposited into the portfolio."""
+    data = load_historical_data()
+    params_no_earnings = _make_params(
+        spending_distribution=FlatDistribution(value=10_000.0),
+        earnings=0.0,
+    )
+    params_with_earnings = _make_params(
+        spending_distribution=FlatDistribution(value=10_000.0),
+        earnings=30_000.0,
+    )
+    result_no = run_simulation(params_no_earnings, data, n_runs=1000, seed=42)
+    result_with = run_simulation(params_with_earnings, data, n_runs=1000, seed=42)
+
+    # Earnings surplus should grow the portfolio faster
+    assert result_with.percentiles["p50"][-1] > result_no.percentiles["p50"][-1]
+
+
+def test_earnings_partial_shortfall() -> None:
+    """When earnings partially cover spending, only the shortfall comes from portfolio."""
+    data = load_historical_data()
+    # Full shortfall: 50K spending, 0 earnings → 50K from portfolio
+    params_full = _make_params(
+        cash_value=0.0,
+        market_value=1_000_000.0,
+        bond_value=0.0,
+        spending_distribution=FlatDistribution(value=50_000.0),
+        earnings=0.0,
+    )
+    # Partial shortfall: 50K spending, 20K earnings → 30K from portfolio
+    params_partial = _make_params(
+        cash_value=0.0,
+        market_value=1_000_000.0,
+        bond_value=0.0,
+        spending_distribution=FlatDistribution(value=50_000.0),
+        earnings=20_000.0,
+    )
+    result_full = run_simulation(params_full, data, n_runs=1000, seed=42)
+    result_partial = run_simulation(params_partial, data, n_runs=1000, seed=42)
+
+    # Partial shortfall should have higher survival and higher median
+    assert result_partial.success_rate >= result_full.success_rate
+    assert result_partial.percentiles["p50"][-1] > result_full.percentiles["p50"][-1]
+
+
+def test_earnings_cover_all_spending_no_withdrawal() -> None:
+    """When earnings fully cover spending, gross withdrawal should be 0."""
+    data = load_historical_data()
+    params = _make_params(
+        cash_value=0.0,
+        market_value=100_000.0,
+        bond_value=0.0,
+        spending_distribution=FlatDistribution(value=10_000.0),
+        earnings=20_000.0,
+        filing_status="single",
+    )
+    result = run_simulation(params, data, n_runs=100, seed=42)
+
+    assert result.gross_withdrawal is not None
+    assert result.gross_withdrawal == 0.0
+    assert result.effective_tax_rate == 0.0

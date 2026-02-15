@@ -77,18 +77,15 @@ def compute_tax(taxable_income: float, filing_status: FilingStatus) -> float:
 def gross_up_withdrawal(
     desired_spending: float,
     filing_status: FilingStatus,
-    other_income: float = 0.0,
 ) -> float:
     """Compute the gross (pre-tax) withdrawal needed to yield desired_spending after tax.
 
-    The marginal tax on the withdrawal is: tax(other_income + W) - tax(other_income).
-    This function finds W such that W - marginal_tax(W) = desired_spending.
+    Assumes the withdrawal is the filer's only income (earnings are post-tax and
+    handled separately).  Finds W such that W - tax(W) = desired_spending.
 
     Algorithm (exact, analytical, O(7)):
-    1. Compute how much of the standard deduction remains after other_income.
-    2. Compute where on the bracket schedule the withdrawal taxation starts.
-    3. Fill the deduction remainder at 0% rate, then walk brackets.
-    4. Each $1 gross at rate r yields $(1-r) after-tax.
+    1. Fill the standard deduction at 0% rate, then walk brackets.
+    2. Each $1 gross at rate r yields $(1-r) after-tax.
     """
     if desired_spending <= 0:
         return 0.0
@@ -96,46 +93,34 @@ def gross_up_withdrawal(
     std_ded = STANDARD_DEDUCTION[filing_status]
     brackets = BRACKETS[filing_status]
 
-    deduction_remaining = max(0.0, std_ded - other_income)
-    other_taxable = max(0.0, other_income - std_ded)
-
     after_tax_remaining = desired_spending
     gross = 0.0
 
-    # Phase 1: consume remaining standard deduction (tax-free)
-    if deduction_remaining > 0 and after_tax_remaining > 0:
-        use = min(deduction_remaining, after_tax_remaining)
+    # Phase 1: consume standard deduction (tax-free)
+    if std_ded > 0 and after_tax_remaining > 0:
+        use = min(std_ded, after_tax_remaining)
         gross += use
         after_tax_remaining -= use
 
     if after_tax_remaining <= 0:
         return gross
 
-    # Phase 2: walk brackets starting from where other_taxable sits
+    # Phase 2: walk brackets
     prev_bound = 0.0
     for rate, upper in zip(RATES, brackets):
         if after_tax_remaining <= 0:
             break
 
-        # Skip brackets already fully consumed by other_taxable
-        if other_taxable >= upper:
-            prev_bound = upper
-            continue
-
-        # Bracket space available for withdrawal
-        bracket_start = max(prev_bound, other_taxable)
-        bracket_capacity = upper - bracket_start  # gross space in this bracket
+        bracket_capacity = upper - prev_bound
 
         # Each $1 gross at this rate yields $(1-rate) after-tax
         after_tax_per_dollar = 1.0 - rate
         after_tax_capacity = bracket_capacity * after_tax_per_dollar
 
         if after_tax_remaining <= after_tax_capacity:
-            # This bracket has enough room
             gross += after_tax_remaining / after_tax_per_dollar
             after_tax_remaining = 0.0
         else:
-            # Fill entire bracket
             gross += bracket_capacity
             after_tax_remaining -= after_tax_capacity
 
@@ -147,7 +132,6 @@ def gross_up_withdrawal(
 def gross_up_withdrawal_array(
     desired_spending: npt.NDArray[np.float64],
     filing_status: FilingStatus,
-    other_income: float = 0.0,
 ) -> npt.NDArray[np.float64]:
     """Vectorized gross-up: same algorithm as scalar version but over an ndarray.
 
@@ -157,34 +141,24 @@ def gross_up_withdrawal_array(
     std_ded = STANDARD_DEDUCTION[filing_status]
     brackets = BRACKETS[filing_status]
 
-    deduction_remaining = max(0.0, std_ded - other_income)
-    other_taxable = max(0.0, other_income - std_ded)
-
     after_tax_remaining = desired_spending.copy()
     gross = np.zeros_like(desired_spending)
 
-    # Phase 1: consume remaining standard deduction (tax-free)
-    if deduction_remaining > 0:
-        use = np.minimum(deduction_remaining, after_tax_remaining)
+    # Phase 1: consume standard deduction (tax-free)
+    if std_ded > 0:
+        use = np.minimum(std_ded, after_tax_remaining)
         use = np.maximum(use, 0.0)
         gross += use
         after_tax_remaining -= use
 
-    # Phase 2: walk brackets starting from where other_taxable sits
+    # Phase 2: walk brackets
     prev_bound = 0.0
     for rate, upper in zip(RATES, brackets):
-        # Skip brackets fully consumed by other_taxable
-        if other_taxable >= upper:
-            prev_bound = upper
-            continue
-
-        bracket_start = max(prev_bound, other_taxable)
-        bracket_capacity = upper - bracket_start
+        bracket_capacity = upper - prev_bound
 
         after_tax_per_dollar = 1.0 - rate
         after_tax_capacity = bracket_capacity * after_tax_per_dollar
 
-        # How much after-tax spending can this bracket serve?
         can_fill = np.minimum(after_tax_remaining, after_tax_capacity)
         can_fill = np.maximum(can_fill, 0.0)
 

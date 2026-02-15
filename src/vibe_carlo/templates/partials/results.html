@@ -15,6 +15,7 @@
     <!-- Tax Adjustment Info -->
     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <p class="text-sm text-gray-500 uppercase tracking-wide mb-2">Federal Tax Adjustment</p>
+        {% if result.gross_withdrawal > 0 %}
         <div class="grid grid-cols-2 gap-4 text-center">
             <div>
                 <p class="text-2xl font-bold text-gray-800">${{ "{:,.0f}".format(result.gross_withdrawal) }}</p>
@@ -29,10 +30,15 @@
                 </p>
             </div>
         </div>
-        {% if params.spending_distribution.dist_type == "flat" %}
-        <p class="text-xs text-gray-400 mt-3">To spend ${{ "{:,.0f}".format(params.spending_distribution.value) }} after tax, ${{ "{:,.0f}".format(result.gross_withdrawal) }} must be withdrawn to cover federal income tax.</p>
+        <p class="text-xs text-gray-400 mt-3">
+            {% if params.spending_distribution.dist_type == "flat" %}
+            Earnings cover part of spending; the shortfall of ${{ "{:,.0f}".format(result.gross_withdrawal) }} must be withdrawn from the portfolio to cover the remainder plus federal income tax.
+            {% else %}
+            Average gross portfolio withdrawal across all simulation samples to cover the spending shortfall beyond earnings, including federal income tax.
+            {% endif %}
+        </p>
         {% else %}
-        <p class="text-xs text-gray-400 mt-3">Average gross withdrawal across all simulation samples to cover federal income tax on spending.</p>
+        <p class="text-sm text-gray-600">Earnings cover all spending — no portfolio withdrawal needed.</p>
         {% endif %}
     </div>
     {% endif %}
