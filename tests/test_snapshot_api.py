@@ -116,7 +116,6 @@ def test_load_snapshot_into_form(client: TestClient, _db_path: Path) -> None:
     assert "750000" in response.text
     assert "100000" in response.text
     assert "LoadTest" in response.text
-    assert "Update Snapshot" in response.text
 
 
 def test_update_snapshot_via_api(client: TestClient, _db_path: Path) -> None:

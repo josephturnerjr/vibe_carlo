@@ -9,7 +9,17 @@
     hx-indicator="#spinner"
     class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6"
 >
-    <h2 class="text-lg font-semibold text-gray-700">Portfolio</h2>
+    <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-700">Portfolio</h2>
+        <button type="button" onclick="document.getElementById('snapshot-modal').showModal()"
+                class="text-gray-400 hover:text-blue-600 transition-colors" title="Save snapshot">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M2 4a2 2 0 012-2h8.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a2 2 0 01-2 2H4a2 2 0 01-2-2V4z"/>
+                <path fill="white" d="M6 2h6v5H6z"/>
+                <rect fill="white" x="5" y="11" width="10" height="5" rx="0.5"/>
+            </svg>
+        </button>
+    </div>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
             <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
@@ -93,14 +103,13 @@
     </button>
 </form>
 
-<!-- Snapshot save/update section -->
-<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-4 space-y-4">
-    <h2 class="text-lg font-semibold text-gray-700">Save Snapshot</h2>
-    <p class="text-xs text-gray-400 -mt-2">Save the current parameters as a dated snapshot for future reference.</p>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<dialog id="snapshot-modal" class="snapshot-dialog">
+    <h2 class="text-lg font-semibold text-gray-700 mb-1">Save Snapshot</h2>
+    <p class="text-xs text-gray-400 mb-4">Save the current parameters as a dated snapshot for future reference.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
         <div>
             <label for="snapshot_name" class="block text-sm font-medium text-gray-600 mb-1">Name (optional)</label>
-            <input type="text" id="snapshot_name" value="{{ snapshot.name or '' }}" placeholder="e.g. Retirement baseline"
+            <input type="text" id="snapshot_name" value="{{ snapshot.name or '' if snapshot else '' }}" placeholder="e.g. Retirement baseline"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
@@ -117,18 +126,13 @@
                 class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm">
             Save Snapshot
         </button>
-        {% if snapshot %}
-        <button type="button" id="update-snapshot-btn"
-                hx-post="/snapshots/{{ snapshot.id }}/update"
-                hx-target="#snapshot-feedback"
-                hx-swap="innerHTML"
-                class="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm">
-            Update Snapshot
+        <button type="button" onclick="document.getElementById('snapshot-modal').close()"
+                class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-md transition-colors text-sm">
+            Cancel
         </button>
-        {% endif %}
     </div>
-    <div id="snapshot-feedback"></div>
-</div>
+    <div id="snapshot-feedback" class="mt-3"></div>
+</dialog>
 
 <div id="spinner" class="htmx-indicator text-center py-8">
     <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
@@ -138,10 +142,28 @@
 <div id="results" class="mt-8"></div>
 
 <script>
+// Clear and reset modal when opened
+document.getElementById('snapshot-modal').addEventListener('click', function(evt) {
+    // Close on backdrop click (click on dialog element itself, not children)
+    if (evt.target === this) this.close();
+});
+
+// Reset fields when modal opens
+var snapshotModal = document.getElementById('snapshot-modal');
+snapshotModal.addEventListener('open', function() {
+    document.getElementById('snapshot-feedback').innerHTML = '';
+});
+// MutationObserver fallback since 'open' event isn't standard on dialog
+new MutationObserver(function() {
+    if (snapshotModal.open) {
+        document.getElementById('snapshot-feedback').innerHTML = '';
+    }
+}).observe(snapshotModal, { attributes: true, attributeFilter: ['open'] });
+
 // Collect form + snapshot fields for HTMX snapshot requests
 document.addEventListener('htmx:configRequest', function(evt) {
     var trigger = evt.detail.elt;
-    if (trigger.id !== 'save-snapshot-btn' && trigger.id !== 'update-snapshot-btn') return;
+    if (trigger.id !== 'save-snapshot-btn') return;
 
     var form = document.getElementById('sim-form');
     var formData = new FormData(form);
@@ -154,6 +176,16 @@ document.addEventListener('htmx:configRequest', function(evt) {
     // Add snapshot-specific fields
     evt.detail.parameters['snapshot_name'] = document.getElementById('snapshot_name').value;
     evt.detail.parameters['snapshot_date'] = document.getElementById('snapshot_date').value;
+});
+
+// Close modal on successful save
+document.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.elt.id !== 'save-snapshot-btn') return;
+    if (evt.detail.successful) {
+        setTimeout(function() {
+            document.getElementById('snapshot-modal').close();
+        }, 1000);
+    }
 });
 
 function renderCharts() {
