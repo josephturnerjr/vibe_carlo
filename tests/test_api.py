@@ -1,26 +1,15 @@
-from collections.abc import Generator
-
-import pytest
 from fastapi.testclient import TestClient
 
-from vibe_carlo.app import app
 
-
-@pytest.fixture(scope="module")
-def client() -> Generator[TestClient]:
-    with TestClient(app) as c:
-        yield c
-
-
-def test_index_page_renders(client: TestClient) -> None:
-    response = client.get("/")
+def test_index_page_renders(auth_client: TestClient) -> None:
+    response = auth_client.get("/")
     assert response.status_code == 200
     assert "vibe_carlo" in response.text
     assert "Run Simulation" in response.text
 
 
-def test_simulate_returns_results(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_returns_results(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "10000",
@@ -38,8 +27,8 @@ def test_simulate_returns_results(client: TestClient) -> None:
     assert "histogram" in response.text
 
 
-def test_simulate_with_sample_years(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_with_sample_years(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",
@@ -56,8 +45,8 @@ def test_simulate_with_sample_years(client: TestClient) -> None:
     assert "Portfolio Survival Rate" in response.text
 
 
-def test_simulate_with_tax_settings(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_with_tax_settings(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",
@@ -76,8 +65,8 @@ def test_simulate_with_tax_settings(client: TestClient) -> None:
     assert "Gross" in response.text
 
 
-def test_simulate_without_filing_status_no_tax_card(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_without_filing_status_no_tax_card(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "10000",
@@ -93,8 +82,8 @@ def test_simulate_without_filing_status_no_tax_card(client: TestClient) -> None:
     assert "Federal Tax Adjustment" not in response.text
 
 
-def test_simulate_invalid_filing_status(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_invalid_filing_status(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "10000",
@@ -110,8 +99,8 @@ def test_simulate_invalid_filing_status(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_simulate_validation_error_zero_portfolio(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_validation_error_zero_portfolio(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",
@@ -126,8 +115,8 @@ def test_simulate_validation_error_zero_portfolio(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_simulate_uniform_distribution(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_uniform_distribution(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",
@@ -144,8 +133,8 @@ def test_simulate_uniform_distribution(client: TestClient) -> None:
     assert "Portfolio Survival Rate" in response.text
 
 
-def test_simulate_truncated_normal_distribution(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_truncated_normal_distribution(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",
@@ -164,8 +153,8 @@ def test_simulate_truncated_normal_distribution(client: TestClient) -> None:
     assert "Portfolio Survival Rate" in response.text
 
 
-def test_simulate_uniform_with_tax(client: TestClient) -> None:
-    response = client.post(
+def test_simulate_uniform_with_tax(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/simulate",
         data={
             "cash_value": "0",

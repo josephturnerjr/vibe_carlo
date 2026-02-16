@@ -9,24 +9,34 @@ from fastapi.testclient import TestClient
 
 import vibe_carlo.app as app_module
 from vibe_carlo.app import app
+from vibe_carlo.auth import create_session, create_user
 from vibe_carlo.db import get_connection, init_db
+from vibe_carlo.schemas import FlatDistribution, SimulationInput
+from vibe_carlo.snapshots import create_snapshot, get_snapshot, list_snapshots
 
 
 @pytest.fixture(scope="module")
-def _db_path() -> Generator[Path]:
-    """Set up a temp DB for the module and patch app._db_path."""
+def _db_path() -> Generator[tuple[Path, int]]:
+    """Set up a temp DB with a test user and patch app._db_path."""
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "test.db"
         init_db(db_path)
+        conn = get_connection(db_path)
+        user_id = create_user(conn, "test@example.com", "password123")
+        conn.close()
         original = app_module._db_path
         app_module._db_path = db_path
-        yield db_path
+        yield db_path, user_id
         app_module._db_path = original
 
 
 @pytest.fixture(scope="module")
-def client(_db_path: Path) -> Generator[TestClient]:
-    with TestClient(app) as c:
+def client(_db_path: tuple[Path, int]) -> Generator[TestClient]:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
+    session_id = create_session(conn, user_id)
+    conn.close()
+    with TestClient(app, cookies={"session_id": session_id}) as c:
         yield c
 
 
@@ -78,27 +88,23 @@ def test_snapshots_page_renders(client: TestClient) -> None:
     assert "Saved Snapshots" in response.text
 
 
-def test_save_snapshot_from_form(client: TestClient, _db_path: Path) -> None:
+def test_save_snapshot_from_form(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
     data = _snapshot_form_data(name="API Test", date="2025-07-01")
     response = client.post("/snapshots/save", data=data)
     assert response.status_code == 200
     assert "Snapshot saved" in response.text
 
     # Verify it's in the DB
-    conn = get_connection(_db_path)
-    from vibe_carlo.snapshots import list_snapshots
-
-    rows = list_snapshots(conn)
+    conn = get_connection(db_path)
+    rows = list_snapshots(conn, user_id)
     conn.close()
     assert any(r["name"] == "API Test" for r in rows)
 
 
-def test_load_snapshot_into_form(client: TestClient, _db_path: Path) -> None:
-    # Create a snapshot first
-    conn = get_connection(_db_path)
-    from vibe_carlo.schemas import FlatDistribution, SimulationInput
-    from vibe_carlo.snapshots import create_snapshot
-
+def test_load_snapshot_into_form(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
     params = SimulationInput(
         cash_value=250000,
         market_value=750000,
@@ -107,7 +113,7 @@ def test_load_snapshot_into_form(client: TestClient, _db_path: Path) -> None:
         spending_distribution=FlatDistribution(value=55000),
         years_to_simulate=25,
     )
-    sid = create_snapshot(conn, "LoadTest", "2025-08-01", params)
+    sid = create_snapshot(conn, user_id, "LoadTest", "2025-08-01", params)
     conn.close()
 
     response = client.get(f"/?snapshot_id={sid}")
@@ -118,12 +124,9 @@ def test_load_snapshot_into_form(client: TestClient, _db_path: Path) -> None:
     assert "LoadTest" in response.text
 
 
-def test_update_snapshot_via_api(client: TestClient, _db_path: Path) -> None:
-    # Create a snapshot
-    conn = get_connection(_db_path)
-    from vibe_carlo.schemas import FlatDistribution, SimulationInput
-    from vibe_carlo.snapshots import create_snapshot, get_snapshot
-
+def test_update_snapshot_via_api(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
     params = SimulationInput(
         cash_value=100000,
         market_value=400000,
@@ -132,7 +135,7 @@ def test_update_snapshot_via_api(client: TestClient, _db_path: Path) -> None:
         spending_distribution=FlatDistribution(value=30000),
         years_to_simulate=20,
     )
-    sid = create_snapshot(conn, "BeforeUpdate", "2025-01-01", params)
+    sid = create_snapshot(conn, user_id, "BeforeUpdate", "2025-01-01", params)
     conn.close()
 
     data = _snapshot_form_data(name="AfterUpdate", date="2025-12-01", cash="200000")
@@ -140,20 +143,17 @@ def test_update_snapshot_via_api(client: TestClient, _db_path: Path) -> None:
     assert response.status_code == 200
     assert "Snapshot updated" in response.text
 
-    conn = get_connection(_db_path)
-    row = get_snapshot(conn, sid)
+    conn = get_connection(db_path)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
     assert row is not None
     assert row["name"] == "AfterUpdate"
     assert row["cash_value"] == 200000.0
 
 
-def test_delete_snapshot_via_api(client: TestClient, _db_path: Path) -> None:
-    # Create a snapshot to delete
-    conn = get_connection(_db_path)
-    from vibe_carlo.schemas import FlatDistribution, SimulationInput
-    from vibe_carlo.snapshots import create_snapshot, get_snapshot
-
+def test_delete_snapshot_via_api(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
     params = SimulationInput(
         cash_value=100000,
         market_value=400000,
@@ -162,19 +162,20 @@ def test_delete_snapshot_via_api(client: TestClient, _db_path: Path) -> None:
         spending_distribution=FlatDistribution(value=30000),
         years_to_simulate=20,
     )
-    sid = create_snapshot(conn, "ToDelete", "2025-01-01", params)
+    sid = create_snapshot(conn, user_id, "ToDelete", "2025-01-01", params)
     conn.close()
 
     response = client.delete(f"/snapshots/{sid}")
     assert response.status_code == 200
 
-    conn = get_connection(_db_path)
-    row = get_snapshot(conn, sid)
+    conn = get_connection(db_path)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
     assert row is None
 
 
-def test_snapshot_round_trip(client: TestClient, _db_path: Path) -> None:
+def test_snapshot_round_trip(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
     # Save
     data = _snapshot_form_data(
         name="RoundTrip",
@@ -198,10 +199,8 @@ def test_snapshot_round_trip(client: TestClient, _db_path: Path) -> None:
     assert "RoundTrip" in response.text
 
     # Find the snapshot ID
-    conn = get_connection(_db_path)
-    from vibe_carlo.snapshots import list_snapshots
-
-    rows = list_snapshots(conn)
+    conn = get_connection(db_path)
+    rows = list_snapshots(conn, user_id)
     conn.close()
     row = next(r for r in rows if r["name"] == "RoundTrip")
     sid = row["id"]
@@ -218,10 +217,8 @@ def test_snapshot_round_trip(client: TestClient, _db_path: Path) -> None:
     assert response.status_code == 200
 
     # Verify update
-    conn = get_connection(_db_path)
-    from vibe_carlo.snapshots import get_snapshot
-
-    updated = get_snapshot(conn, sid)
+    conn = get_connection(db_path)
+    updated = get_snapshot(conn, sid, user_id)
     conn.close()
     assert updated is not None
     assert updated["name"] == "RoundTripUpdated"
@@ -260,7 +257,10 @@ def test_update_nonexistent_snapshot(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_save_snapshot_each_distribution_type(client: TestClient, _db_path: Path) -> None:
+def test_save_snapshot_each_distribution_type(
+    client: TestClient, _db_path: tuple[Path, int]
+) -> None:
+    db_path, user_id = _db_path
     # Flat
     data = _snapshot_form_data(
         name="FlatDist", date="2025-01-01", dist_type="flat", dist_value="50000"
@@ -293,24 +293,26 @@ def test_save_snapshot_each_distribution_type(client: TestClient, _db_path: Path
     assert response.status_code == 200
 
     # Verify all three in DB
-    conn = get_connection(_db_path)
-    from vibe_carlo.snapshots import list_snapshots
-
-    rows = list_snapshots(conn)
+    conn = get_connection(db_path)
+    rows = list_snapshots(conn, user_id)
     conn.close()
     names = {r["name"] for r in rows}
     assert {"FlatDist", "UniformDist", "NormalDist"} <= names
 
 
-def test_snapshots_page_empty(_db_path: Path) -> None:
+def test_snapshots_page_empty(_db_path: tuple[Path, int]) -> None:
     # Use a fresh DB
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "empty.db"
         init_db(db_path)
+        conn = get_connection(db_path)
+        user_id = create_user(conn, "empty@test.com", "pass")
+        session_id = create_session(conn, user_id)
+        conn.close()
         original = app_module._db_path
         app_module._db_path = db_path
         try:
-            with TestClient(app) as c:
+            with TestClient(app, cookies={"session_id": session_id}) as c:
                 response = c.get("/snapshots")
                 assert response.status_code == 200
                 assert "No snapshots saved yet" in response.text

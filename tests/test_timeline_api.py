@@ -9,25 +9,33 @@ from fastapi.testclient import TestClient
 
 import vibe_carlo.app as app_module
 from vibe_carlo.app import app
+from vibe_carlo.auth import create_session, create_user
 from vibe_carlo.db import get_connection, init_db
 from vibe_carlo.schemas import FlatDistribution, SimulationInput
 from vibe_carlo.snapshots import create_snapshot
 
 
 @pytest.fixture(scope="module")
-def _db_path() -> Generator[Path]:
+def _db_path() -> Generator[tuple[Path, int]]:
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "test.db"
         init_db(db_path)
+        conn = get_connection(db_path)
+        user_id = create_user(conn, "test@example.com", "password123")
+        conn.close()
         original = app_module._db_path
         app_module._db_path = db_path
-        yield db_path
+        yield db_path, user_id
         app_module._db_path = original
 
 
 @pytest.fixture(scope="module")
-def client(_db_path: Path) -> Generator[TestClient]:
-    with TestClient(app) as c:
+def client(_db_path: tuple[Path, int]) -> Generator[TestClient]:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
+    session_id = create_session(conn, user_id)
+    conn.close()
+    with TestClient(app, cookies={"session_id": session_id}) as c:
         yield c
 
 
@@ -56,10 +64,14 @@ def test_timeline_empty_state(client: TestClient) -> None:
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "empty.db"
         init_db(db_path)
+        conn = get_connection(db_path)
+        user_id = create_user(conn, "empty@test.com", "pass")
+        session_id = create_session(conn, user_id)
+        conn.close()
         original = app_module._db_path
         app_module._db_path = db_path
         try:
-            with TestClient(app) as c:
+            with TestClient(app, cookies={"session_id": session_id}) as c:
                 response = c.get("/timeline")
                 assert response.status_code == 200
                 assert "No snapshots saved yet" in response.text
@@ -67,11 +79,12 @@ def test_timeline_empty_state(client: TestClient) -> None:
             app_module._db_path = original
 
 
-def test_timeline_with_snapshots(client: TestClient, _db_path: Path) -> None:
-    conn = get_connection(_db_path)
+def test_timeline_with_snapshots(client: TestClient, _db_path: tuple[Path, int]) -> None:
+    db_path, user_id = _db_path
+    conn = get_connection(db_path)
     params = _make_params()
-    create_snapshot(conn, "T1", "2024-01-01", params)
-    create_snapshot(conn, "T2", "2025-01-01", params)
+    create_snapshot(conn, user_id, "T1", "2024-01-01", params)
+    create_snapshot(conn, user_id, "T2", "2025-01-01", params)
     conn.close()
 
     response = client.get("/timeline")

@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-_CREATE_TABLE = """\
+_CREATE_SNAPSHOTS_TABLE = """\
 CREATE TABLE IF NOT EXISTS snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
@@ -22,6 +22,32 @@ CREATE TABLE IF NOT EXISTS snapshots (
 );
 """
 
+_CREATE_USERS_TABLE = """\
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_SESSIONS_TABLE = """\
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+);
+"""
+
+
+def _migrate_add_user_id(conn: sqlite3.Connection) -> None:
+    """Add user_id column to snapshots table if it doesn't exist."""
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(snapshots)").fetchall()]
+    if "user_id" not in columns:
+        conn.execute("ALTER TABLE snapshots ADD COLUMN user_id INTEGER REFERENCES users(id)")
+        conn.commit()
+
 
 def get_db_path() -> Path:
     """Return the path to the SQLite database file.
@@ -35,12 +61,15 @@ def get_db_path() -> Path:
 
 
 def init_db(db_path: Path | None = None) -> None:
-    """Create the database directory and table if they don't exist."""
+    """Create the database directory and tables if they don't exist."""
     path = db_path or get_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     try:
-        conn.execute(_CREATE_TABLE)
+        conn.execute(_CREATE_SNAPSHOTS_TABLE)
+        conn.execute(_CREATE_USERS_TABLE)
+        conn.execute(_CREATE_SESSIONS_TABLE)
+        _migrate_add_user_id(conn)
         conn.commit()
     finally:
         conn.close()

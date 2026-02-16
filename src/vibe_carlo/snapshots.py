@@ -21,6 +21,7 @@ def _deserialize_distribution(raw: str) -> SpendingDistribution:
 
 def create_snapshot(
     conn: sqlite3.Connection,
+    user_id: int,
     name: str | None,
     snapshot_date: str,
     params: SimulationInput,
@@ -29,12 +30,13 @@ def create_snapshot(
     cur = conn.execute(
         """\
         INSERT INTO snapshots
-            (name, snapshot_date, cash_value, market_value, bond_value,
+            (user_id, name, snapshot_date, cash_value, market_value, bond_value,
              earnings, spending_distribution, years_to_simulate,
              sample_years, filing_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            user_id,
             name,
             snapshot_date,
             params.cash_value,
@@ -51,29 +53,37 @@ def create_snapshot(
     return cur.lastrowid  # type: ignore[return-value]
 
 
-def get_snapshot(conn: sqlite3.Connection, snapshot_id: int) -> dict[str, object] | None:
-    """Fetch a single snapshot by ID, or None if not found."""
-    cur = conn.execute("SELECT * FROM snapshots WHERE id = ?", (snapshot_id,))
+def get_snapshot(
+    conn: sqlite3.Connection, snapshot_id: int, user_id: int
+) -> dict[str, object] | None:
+    """Fetch a single snapshot by ID scoped to user, or None if not found."""
+    cur = conn.execute(
+        "SELECT * FROM snapshots WHERE id = ? AND user_id = ?", (snapshot_id, user_id)
+    )
     row = cur.fetchone()
     if row is None:
         return None
     return dict(row)
 
 
-def list_snapshots(conn: sqlite3.Connection) -> list[dict[str, object]]:
-    """Return all snapshots ordered by snapshot_date descending."""
-    cur = conn.execute("SELECT * FROM snapshots ORDER BY snapshot_date DESC, id DESC")
+def list_snapshots(conn: sqlite3.Connection, user_id: int) -> list[dict[str, object]]:
+    """Return all snapshots for a user ordered by snapshot_date descending."""
+    cur = conn.execute(
+        "SELECT * FROM snapshots WHERE user_id = ? ORDER BY snapshot_date DESC, id DESC",
+        (user_id,),
+    )
     return [dict(r) for r in cur.fetchall()]
 
 
 def update_snapshot(
     conn: sqlite3.Connection,
     snapshot_id: int,
+    user_id: int,
     name: str | None,
     snapshot_date: str,
     params: SimulationInput,
 ) -> bool:
-    """Update an existing snapshot. Returns True if the row existed."""
+    """Update an existing snapshot scoped to user. Returns True if the row existed."""
     cur = conn.execute(
         """\
         UPDATE snapshots SET
@@ -88,7 +98,7 @@ def update_snapshot(
             sample_years = ?,
             filing_status = ?,
             updated_at = datetime('now')
-        WHERE id = ?
+        WHERE id = ? AND user_id = ?
         """,
         (
             name,
@@ -102,14 +112,17 @@ def update_snapshot(
             params.sample_years,
             params.filing_status.value if params.filing_status else None,
             snapshot_id,
+            user_id,
         ),
     )
     conn.commit()
     return cur.rowcount > 0
 
 
-def delete_snapshot(conn: sqlite3.Connection, snapshot_id: int) -> bool:
-    """Delete a snapshot by ID. Returns True if the row existed."""
-    cur = conn.execute("DELETE FROM snapshots WHERE id = ?", (snapshot_id,))
+def delete_snapshot(conn: sqlite3.Connection, snapshot_id: int, user_id: int) -> bool:
+    """Delete a snapshot by ID scoped to user. Returns True if the row existed."""
+    cur = conn.execute(
+        "DELETE FROM snapshots WHERE id = ? AND user_id = ?", (snapshot_id, user_id)
+    )
     conn.commit()
     return cur.rowcount > 0

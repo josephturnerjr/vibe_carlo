@@ -1,15 +1,26 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Form, Query, Request, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
+from vibe_carlo.auth import (
+    clear_session_cookie,
+    create_session,
+    delete_session,
+    get_user_by_email,
+    set_session_cookie,
+    validate_session,
+    verify_password,
+)
 from vibe_carlo.db import get_connection, init_db
 from vibe_carlo.schemas import (
     FilingStatus,
@@ -36,6 +47,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 historical_data: npt.NDArray[np.float64]
 _db_path: Path | None = None
+_secure_cookies = os.environ.get("VIBE_CARLO_SECURE_COOKIES", "") == "1"
 
 
 @asynccontextmanager
@@ -48,6 +60,35 @@ async def lifespan(app: FastAPI) -> Any:
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_current_user(request: Request) -> tuple[int, str] | None:
+    """Read session cookie and return (user_id, email) or None."""
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        return None
+    conn = get_connection(_db_path)
+    try:
+        return validate_session(conn, session_id)
+    finally:
+        conn.close()
+
+
+def _auth_redirect(request: Request) -> Response:
+    """Return a redirect to /login, HTMX-aware."""
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, headers={"HX-Redirect": "/login"})
+    return RedirectResponse(url="/login", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Form parsing helpers
+# ---------------------------------------------------------------------------
 
 
 def _parse_distribution(
@@ -126,22 +167,85 @@ def _snapshot_to_row(raw: dict[str, object]) -> SnapshotRow:
     )
 
 
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request) -> Response:
+    user = _get_current_user(request)
+    if user is not None:
+        return RedirectResponse(url="/", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login_submit(
+    request: Request,
+    email: str = Form(default=""),
+    password: str = Form(default=""),
+) -> Response:
+    conn = get_connection(_db_path)
+    try:
+        user = get_user_by_email(conn, email)
+        if user is None or not verify_password(password, str(user["password_hash"])):
+            return templates.TemplateResponse(
+                request,
+                "login.html",
+                {"error": "Invalid email or password."},
+                status_code=401,
+            )
+        session_id = create_session(conn, int(str(user["id"])))
+    finally:
+        conn.close()
+    response = RedirectResponse(url="/", status_code=303)
+    set_session_cookie(response, session_id, secure=_secure_cookies)
+    return response
+
+
+@app.post("/logout")
+async def logout(request: Request) -> Response:
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        conn = get_connection(_db_path)
+        try:
+            delete_session(conn, session_id)
+        finally:
+            conn.close()
+    response = RedirectResponse(url="/login", status_code=303)
+    clear_session_cookie(response)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Main routes (all require auth)
+# ---------------------------------------------------------------------------
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(
     request: Request,
     snapshot_id: int | None = Query(default=None),
-) -> HTMLResponse:
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
     snapshot: SnapshotRow | None = None
     if snapshot_id is not None:
         conn = get_connection(_db_path)
         try:
-            raw = get_snapshot(conn, snapshot_id)
+            raw = get_snapshot(conn, snapshot_id, user_id)
         finally:
             conn.close()
         if raw is None:
             return HTMLResponse(status_code=404, content="Snapshot not found")
         snapshot = _snapshot_to_row(raw)
-    return templates.TemplateResponse(request, "index.html", {"snapshot": snapshot})
+    return templates.TemplateResponse(
+        request, "index.html", {"snapshot": snapshot, "user_email": user_email}
+    )
 
 
 @app.post("/simulate", response_model=None)
@@ -160,7 +264,11 @@ async def simulate(
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
     filing_status: str | None = Form(default=None),
-) -> HTMLResponse | JSONResponse:
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+
     try:
         params = _parse_form_params(
             cash_value,
@@ -184,7 +292,7 @@ async def simulate(
             messages = [str(e)]
         return JSONResponse(status_code=422, content={"detail": messages})
 
-    result = run_simulation(params, historical_data)
+    result = await asyncio.to_thread(run_simulation, params, historical_data)
 
     return templates.TemplateResponse(
         request,
@@ -202,14 +310,21 @@ async def simulate(
 
 
 @app.get("/snapshots", response_class=HTMLResponse)
-async def snapshots_page(request: Request) -> HTMLResponse:
+async def snapshots_page(request: Request) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
     conn = get_connection(_db_path)
     try:
-        rows = list_snapshots(conn)
+        rows = list_snapshots(conn, user_id)
     finally:
         conn.close()
     typed_rows = [_snapshot_to_row(r) for r in rows]
-    return templates.TemplateResponse(request, "snapshots.html", {"snapshots": typed_rows})
+    return templates.TemplateResponse(
+        request, "snapshots.html", {"snapshots": typed_rows, "user_email": user_email}
+    )
 
 
 @app.post("/snapshots/save", response_class=HTMLResponse)
@@ -230,7 +345,12 @@ async def save_snapshot(
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
     filing_status: str | None = Form(default=None),
-) -> HTMLResponse:
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
     if not snapshot_date:
         return HTMLResponse(
             '<p class="text-red-600 text-sm">Date is required.</p>',
@@ -266,7 +386,7 @@ async def save_snapshot(
     name = snapshot_name.strip() or None
     conn = get_connection(_db_path)
     try:
-        create_snapshot(conn, name, snapshot_date, params)
+        create_snapshot(conn, user_id, name, snapshot_date, params)
     finally:
         conn.close()
     return HTMLResponse('<p class="text-green-600 text-sm">Snapshot saved.</p>')
@@ -291,7 +411,12 @@ async def update_snapshot_route(
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
     filing_status: str | None = Form(default=None),
-) -> HTMLResponse:
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
     if not snapshot_date:
         return HTMLResponse(
             '<p class="text-red-600 text-sm">Date is required.</p>',
@@ -327,7 +452,7 @@ async def update_snapshot_route(
     name = snapshot_name.strip() or None
     conn = get_connection(_db_path)
     try:
-        found = update_snapshot(conn, snapshot_id, name, snapshot_date, params)
+        found = update_snapshot(conn, snapshot_id, user_id, name, snapshot_date, params)
     finally:
         conn.close()
     if not found:
@@ -339,10 +464,15 @@ async def update_snapshot_route(
 
 
 @app.delete("/snapshots/{snapshot_id}", response_class=HTMLResponse)
-async def delete_snapshot_route(snapshot_id: int) -> HTMLResponse:
+async def delete_snapshot_route(request: Request, snapshot_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
     conn = get_connection(_db_path)
     try:
-        found = delete_snapshot(conn, snapshot_id)
+        found = delete_snapshot(conn, snapshot_id, user_id)
     finally:
         conn.close()
     if not found:
@@ -360,14 +490,25 @@ async def delete_snapshot_route(snapshot_id: int) -> HTMLResponse:
 
 
 @app.get("/timeline", response_class=HTMLResponse)
-async def timeline_page(request: Request) -> HTMLResponse:
+async def timeline_page(request: Request) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
     conn = get_connection(_db_path)
     try:
-        rows = list_snapshots(conn)
+        rows = list_snapshots(conn, user_id)
     finally:
         conn.close()
     # list_snapshots returns DESC order; reverse for ASC
     typed_rows = [_snapshot_to_row(r) for r in reversed(rows)]
 
-    timeline = compute_timeline(typed_rows, historical_data) if typed_rows else None
-    return templates.TemplateResponse(request, "timeline.html", {"timeline": timeline})
+    timeline = (
+        await asyncio.to_thread(compute_timeline, typed_rows, historical_data)
+        if typed_rows
+        else None
+    )
+    return templates.TemplateResponse(
+        request, "timeline.html", {"timeline": timeline, "user_email": user_email}
+    )

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from vibe_carlo.auth import create_user
 from vibe_carlo.db import get_connection, init_db
 from vibe_carlo.schemas import (
     FilingStatus,
@@ -22,11 +23,14 @@ from vibe_carlo.snapshots import (
 
 
 @pytest.fixture()
-def db(tmp_path: Path) -> Path:
-    """Create a temporary SQLite database and return its path."""
+def db(tmp_path: Path) -> tuple[Path, int]:
+    """Create a temporary SQLite database with a test user, return (path, user_id)."""
     db_path = tmp_path / "test.db"
     init_db(db_path)
-    return db_path
+    conn = get_connection(db_path)
+    user_id = create_user(conn, "test@example.com", "password123")
+    conn.close()
+    return db_path, user_id
 
 
 def _make_params(
@@ -55,11 +59,12 @@ def _make_params(
 # --- Happy path ---
 
 
-def test_create_and_get_snapshot(db: Path) -> None:
-    conn = get_connection(db)
+def test_create_and_get_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    sid = create_snapshot(conn, "Test", "2025-01-15", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, "Test", "2025-01-15", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
@@ -73,12 +78,13 @@ def test_create_and_get_snapshot(db: Path) -> None:
     assert '"dist_type": "flat"' in str(row["spending_distribution"])
 
 
-def test_create_snapshot_uniform_distribution(db: Path) -> None:
-    conn = get_connection(db)
+def test_create_snapshot_uniform_distribution(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     dist = UniformDistribution(low=30000, high=60000)
     params = _make_params(spending=dist)
-    sid = create_snapshot(conn, None, "2025-02-01", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, None, "2025-02-01", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
@@ -87,12 +93,13 @@ def test_create_snapshot_uniform_distribution(db: Path) -> None:
     assert '"high": 60000' in str(row["spending_distribution"])
 
 
-def test_create_snapshot_truncated_normal(db: Path) -> None:
-    conn = get_connection(db)
+def test_create_snapshot_truncated_normal(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     dist = TruncatedNormalDistribution(low=20000, high=80000, mean=50000, stddev=10000)
     params = _make_params(spending=dist)
-    sid = create_snapshot(conn, None, "2025-03-01", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, None, "2025-03-01", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
@@ -100,35 +107,38 @@ def test_create_snapshot_truncated_normal(db: Path) -> None:
     assert '"mean": 50000' in str(row["spending_distribution"])
 
 
-def test_create_snapshot_with_name(db: Path) -> None:
-    conn = get_connection(db)
+def test_create_snapshot_with_name(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    sid = create_snapshot(conn, "My Retirement Plan", "2025-06-01", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, "My Retirement Plan", "2025-06-01", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
     assert row["name"] == "My Retirement Plan"
 
 
-def test_create_snapshot_without_name(db: Path) -> None:
-    conn = get_connection(db)
+def test_create_snapshot_without_name(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    sid = create_snapshot(conn, None, "2025-06-01", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, None, "2025-06-01", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
     assert row["name"] is None
 
 
-def test_list_snapshots_ordered_by_date(db: Path) -> None:
-    conn = get_connection(db)
+def test_list_snapshots_ordered_by_date(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    create_snapshot(conn, "Jan", "2025-01-01", params)
-    create_snapshot(conn, "Mar", "2025-03-01", params)
-    create_snapshot(conn, "Feb", "2025-02-01", params)
-    rows = list_snapshots(conn)
+    create_snapshot(conn, user_id, "Jan", "2025-01-01", params)
+    create_snapshot(conn, user_id, "Mar", "2025-03-01", params)
+    create_snapshot(conn, user_id, "Feb", "2025-02-01", params)
+    rows = list_snapshots(conn, user_id)
     conn.close()
 
     assert len(rows) == 3
@@ -137,14 +147,15 @@ def test_list_snapshots_ordered_by_date(db: Path) -> None:
     assert rows[2]["name"] == "Jan"
 
 
-def test_update_snapshot(db: Path) -> None:
-    conn = get_connection(db)
+def test_update_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params(cash=100000)
-    sid = create_snapshot(conn, "Original", "2025-01-01", params)
+    sid = create_snapshot(conn, user_id, "Original", "2025-01-01", params)
 
     updated_params = _make_params(cash=200000)
-    result = update_snapshot(conn, sid, "Updated", "2025-06-01", updated_params)
-    row = get_snapshot(conn, sid)
+    result = update_snapshot(conn, sid, user_id, "Updated", "2025-06-01", updated_params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert result is True
@@ -154,12 +165,13 @@ def test_update_snapshot(db: Path) -> None:
     assert row["cash_value"] == 200000
 
 
-def test_delete_snapshot(db: Path) -> None:
-    conn = get_connection(db)
+def test_delete_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    sid = create_snapshot(conn, "ToDelete", "2025-01-01", params)
-    result = delete_snapshot(conn, sid)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, "ToDelete", "2025-01-01", params)
+    result = delete_snapshot(conn, sid, user_id)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert result is True
@@ -169,34 +181,38 @@ def test_delete_snapshot(db: Path) -> None:
 # --- Edge cases ---
 
 
-def test_get_nonexistent_snapshot(db: Path) -> None:
-    conn = get_connection(db)
-    row = get_snapshot(conn, 999)
+def test_get_nonexistent_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
+    row = get_snapshot(conn, 999, user_id)
     conn.close()
     assert row is None
 
 
-def test_delete_nonexistent_snapshot(db: Path) -> None:
-    conn = get_connection(db)
-    result = delete_snapshot(conn, 999)
+def test_delete_nonexistent_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
+    result = delete_snapshot(conn, 999, user_id)
     conn.close()
     assert result is False
 
 
-def test_update_nonexistent_snapshot(db: Path) -> None:
-    conn = get_connection(db)
+def test_update_nonexistent_snapshot(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    result = update_snapshot(conn, 999, "Ghost", "2025-01-01", params)
+    result = update_snapshot(conn, 999, user_id, "Ghost", "2025-01-01", params)
     conn.close()
     assert result is False
 
 
-def test_multiple_snapshots_same_date(db: Path) -> None:
-    conn = get_connection(db)
+def test_multiple_snapshots_same_date(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     params = _make_params()
-    create_snapshot(conn, "A", "2025-01-01", params)
-    create_snapshot(conn, "B", "2025-01-01", params)
-    rows = list_snapshots(conn)
+    create_snapshot(conn, user_id, "A", "2025-01-01", params)
+    create_snapshot(conn, user_id, "B", "2025-01-01", params)
+    rows = list_snapshots(conn, user_id)
     conn.close()
 
     assert len(rows) == 2
@@ -204,12 +220,13 @@ def test_multiple_snapshots_same_date(db: Path) -> None:
     assert names == {"A", "B"}
 
 
-def test_snapshot_with_all_optional_fields_none(db: Path) -> None:
-    conn = get_connection(db)
+def test_snapshot_with_all_optional_fields_none(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     # sample_years=None gets defaulted to years_to_simulate by SimulationInput validator
     params = _make_params(sample_years=None, filing_status=None)
-    sid = create_snapshot(conn, None, "2025-01-01", params)
-    row = get_snapshot(conn, sid)
+    sid = create_snapshot(conn, user_id, None, "2025-01-01", params)
+    row = get_snapshot(conn, sid, user_id)
     conn.close()
 
     assert row is not None
@@ -218,12 +235,13 @@ def test_snapshot_with_all_optional_fields_none(db: Path) -> None:
     assert row["filing_status"] is None
 
 
-def test_snapshot_preserves_filing_status(db: Path) -> None:
-    conn = get_connection(db)
+def test_snapshot_preserves_filing_status(db: tuple[Path, int]) -> None:
+    db_path, user_id = db
+    conn = get_connection(db_path)
     for status in FilingStatus:
         params = _make_params(filing_status=status)
-        sid = create_snapshot(conn, None, "2025-01-01", params)
-        row = get_snapshot(conn, sid)
+        sid = create_snapshot(conn, user_id, None, "2025-01-01", params)
+        row = get_snapshot(conn, sid, user_id)
         assert row is not None
         assert row["filing_status"] == status.value
     conn.close()
