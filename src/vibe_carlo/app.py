@@ -29,6 +29,7 @@ from vibe_carlo.snapshots import (
     list_snapshots,
     update_snapshot,
 )
+from vibe_carlo.timeline import compute_timeline
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -351,3 +352,22 @@ async def delete_snapshot_route(snapshot_id: int) -> HTMLResponse:
         )
     # Return empty string so HTMX removes the row
     return HTMLResponse("")
+
+
+# ---------------------------------------------------------------------------
+# Timeline route
+# ---------------------------------------------------------------------------
+
+
+@app.get("/timeline", response_class=HTMLResponse)
+async def timeline_page(request: Request) -> HTMLResponse:
+    conn = get_connection(_db_path)
+    try:
+        rows = list_snapshots(conn)
+    finally:
+        conn.close()
+    # list_snapshots returns DESC order; reverse for ASC
+    typed_rows = [_snapshot_to_row(r) for r in reversed(rows)]
+
+    timeline = compute_timeline(typed_rows, historical_data) if typed_rows else None
+    return templates.TemplateResponse(request, "timeline.html", {"timeline": timeline})

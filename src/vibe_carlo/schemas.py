@@ -108,6 +108,35 @@ class SimulationResult(BaseModel):
     effective_tax_rate: float | None = None
 
 
+class TimelinePoint(BaseModel):
+    date: str  # ISO date "YYYY-MM-DD"
+    value: float  # cash + market + bonds
+    name: str | None
+    snapshot_id: int
+    percentile: float | None  # None for first snapshot
+
+
+class ViolinData(BaseModel):
+    date: str  # x-position (date of the LATER snapshot)
+    values: list[float]  # y-coordinates (portfolio values along KDE curve)
+    densities: list[float]  # normalized densities (max = 1.0)
+
+
+class FanChartData(BaseModel):
+    dates: list[str]  # ISO date strings, one per year
+    p10: list[float]
+    p25: list[float]
+    p50: list[float]
+    p75: list[float]
+    p90: list[float]
+
+
+class TimelineData(BaseModel):
+    points: list[TimelinePoint]
+    violins: list[ViolinData]
+    fan_chart: FanChartData | None
+
+
 class SnapshotRow(BaseModel):
     id: int
     name: str | None = None

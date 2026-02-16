@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <h2 class="text-lg font-semibold text-gray-700 mb-4">Timeline</h2>
+
+    {% if not timeline %}
+    <p class="text-gray-500">No snapshots saved yet. <a href="/" class="text-blue-600 hover:underline">Run a simulation</a> and save a snapshot to start building your timeline.</p>
+    {% elif timeline.points | length == 1 %}
+    <p class="text-sm text-gray-500 mb-4">Save more snapshots over time to see how your actual portfolio compares to predictions.</p>
+    <div id="timeline-chart" style="width:100%; height:500px;"></div>
+    {% else %}
+    <p class="text-sm text-gray-500 mb-4">Your portfolio history with Monte Carlo predictions at each checkpoint.</p>
+    <div id="timeline-chart" style="width:100%; height:500px;"></div>
+    {% endif %}
+</div>
+
+{% if timeline %}
+<script id="timeline-data" type="application/json">{{ timeline.model_dump_json() | safe }}</script>
+<script>
+(function() {
+    var raw = JSON.parse(document.getElementById('timeline-data').textContent);
+
+    function formatDollar(val) {
+        if (val >= 1e6) return '$' + (val / 1e6).toFixed(1) + 'M';
+        if (val >= 1e3) return '$' + (val / 1e3).toFixed(0) + 'K';
+        return '$' + val.toFixed(0);
+    }
+
+    function daysBetween(a, b) {
+        return Math.abs((new Date(b) - new Date(a)) / 86400000);
+    }
+
+    var traces = [];
+    var annotations = [];
+
+    // --- Fan chart (drawn first so it's behind everything) ---
+    if (raw.fan_chart) {
+        var fc = raw.fan_chart;
+        traces.push({
+            x: fc.dates, y: fc.p10, type: 'scatter', mode: 'lines',
+            line: { width: 0 }, showlegend: false, hoverinfo: 'skip',
+        });
+        traces.push({
+            x: fc.dates, y: fc.p90, type: 'scatter', mode: 'lines',
+            fill: 'tonexty', fillcolor: 'rgba(59, 130, 246, 0.1)',
+            line: { width: 0 }, name: '10th\u201390th', hoverinfo: 'skip',
+        });
+        traces.push({
+            x: fc.dates, y: fc.p25, type: 'scatter', mode: 'lines',
+            line: { width: 0 }, showlegend: false, hoverinfo: 'skip',
+        });
+        traces.push({
+            x: fc.dates, y: fc.p75, type: 'scatter', mode: 'lines',
+            fill: 'tonexty', fillcolor: 'rgba(59, 130, 246, 0.25)',
+            line: { width: 0 }, name: '25th\u201375th', hoverinfo: 'skip',
+        });
+        traces.push({
+            x: fc.dates, y: fc.p50, type: 'scatter', mode: 'lines',
+            line: { color: 'rgb(37, 99, 235)', width: 2 }, name: 'Projected median',
+            hovertemplate: '%{x}<br>%{text}<extra></extra>',
+            text: fc.p50.map(formatDollar),
+        });
+    }
+
+    // --- Violin shapes ---
+    if (raw.violins && raw.violins.length > 0) {
+        // Compute max width: 30% of minimum gap between adjacent points, floor 7 days
+        var pointDates = raw.points.map(function(p) { return p.date; });
+        var minGap = Infinity;
+        for (var i = 1; i < pointDates.length; i++) {
+            var gap = daysBetween(pointDates[i - 1], pointDates[i]);
+            if (gap < minGap) minGap = gap;
+        }
+        var maxWidthDays = Math.max(7, Math.floor(minGap * 0.3));
+
+        for (var vi = 0; vi < raw.violins.length; vi++) {
+            var v = raw.violins[vi];
+            var centerDate = new Date(v.date);
+            var xLeft = [];
+            var xRight = [];
+            var yLeft = [];
+            var yRight = [];
+
+            for (var j = 0; j < v.values.length; j++) {
+                var offset = v.densities[j] * maxWidthDays;
+                var leftDate = new Date(centerDate.getTime() - offset * 86400000);
+                var rightDate = new Date(centerDate.getTime() + offset * 86400000);
+                xLeft.push(leftDate.toISOString().slice(0, 10));
+                xRight.push(rightDate.toISOString().slice(0, 10));
+                yLeft.push(v.values[j]);
+                yRight.push(v.values[j]);
+            }
+
+            // Build closed polygon: left top-to-bottom, right bottom-to-top
+            var polyX = xLeft.concat(xRight.reverse());
+            var polyY = yLeft.concat(yRight.reverse());
+
+            traces.push({
+                x: polyX, y: polyY, type: 'scatter', mode: 'lines',
+                fill: 'toself', fillcolor: 'rgba(139, 92, 246, 0.25)',
+                line: { color: 'rgba(139, 92, 246, 0.5)', width: 1 },
+                showlegend: vi === 0, name: 'Predicted distribution',
+                hoverinfo: 'skip',
+            });
+        }
+    }
+
+    // --- Historical line + markers ---
+    if (raw.points && raw.points.length > 0) {
+        var hDates = raw.points.map(function(p) { return p.date; });
+        var hValues = raw.points.map(function(p) { return p.value; });
+        var hText = raw.points.map(function(p) {
+            var label = formatDollar(p.value);
+            if (p.name) label = p.name + ': ' + label;
+            return label;
+        });
+
+        traces.push({
+            x: hDates, y: hValues, type: 'scatter', mode: 'lines+markers',
+            line: { color: 'rgb(16, 185, 129)', width: 2.5 },
+            marker: { size: 8, color: 'rgb(16, 185, 129)' },
+            name: 'Actual portfolio',
+            hovertemplate: '%{x}<br>%{text}<extra></extra>',
+            text: hText,
+        });
+
+        // Percentile annotations on non-first points
+        for (var pi = 1; pi < raw.points.length; pi++) {
+            var pt = raw.points[pi];
+            if (pt.percentile !== null) {
+                annotations.push({
+                    x: pt.date,
+                    y: pt.value,
+                    text: 'p' + Math.round(pt.percentile),
+                    showarrow: true,
+                    arrowhead: 0,
+                    arrowcolor: 'rgba(107, 114, 128, 0.5)',
+                    ax: 0,
+                    ay: -30,
+                    font: { size: 11, color: 'rgb(107, 114, 128)' },
+                });
+            }
+        }
+    }
+
+    var layout = {
+        xaxis: { type: 'date' },
+        yaxis: { title: 'Portfolio Value', tickprefix: '$', separatethousands: true },
+        legend: { orientation: 'h', y: -0.15 },
+        margin: { t: 20, r: 20 },
+        hovermode: 'closest',
+        annotations: annotations,
+    };
+
+    Plotly.newPlot('timeline-chart', traces, layout, { responsive: true });
+})();
+</script>
+{% endif %}
+{% endblock %}
