@@ -41,6 +41,35 @@ CREATE TABLE IF NOT EXISTS sessions (
 """
 
 
+_CREATE_PLANS_TABLE = """\
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_PLAN_PARAMETER_SETS_TABLE = """\
+CREATE TABLE IF NOT EXISTS plan_parameter_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    order_position INTEGER NOT NULL,
+    duration INTEGER,
+    cash_value REAL NOT NULL,
+    market_value REAL NOT NULL,
+    bond_value REAL NOT NULL,
+    earnings REAL NOT NULL DEFAULT 0,
+    spending_distribution TEXT NOT NULL,
+    filing_status TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+
 def _migrate_add_user_id(conn: sqlite3.Connection) -> None:
     """Add user_id column to snapshots table if it doesn't exist."""
     columns = [row[1] for row in conn.execute("PRAGMA table_info(snapshots)").fetchall()]
@@ -69,6 +98,8 @@ def init_db(db_path: Path | None = None) -> None:
         conn.execute(_CREATE_SNAPSHOTS_TABLE)
         conn.execute(_CREATE_USERS_TABLE)
         conn.execute(_CREATE_SESSIONS_TABLE)
+        conn.execute(_CREATE_PLANS_TABLE)
+        conn.execute(_CREATE_PLAN_PARAMETER_SETS_TABLE)
         _migrate_add_user_id(conn)
         conn.commit()
     finally:

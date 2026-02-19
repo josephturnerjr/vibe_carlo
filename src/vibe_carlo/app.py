@@ -22,9 +22,23 @@ from vibe_carlo.auth import (
     verify_password,
 )
 from vibe_carlo.db import get_connection, init_db
+from vibe_carlo.plans import (
+    create_parameter_set,
+    create_plan,
+    delete_parameter_set,
+    delete_plan,
+    get_plan,
+    list_parameter_sets,
+    list_plans,
+    move_parameter_set,
+    param_set_to_typed,
+    update_parameter_set,
+    update_plan_name,
+)
 from vibe_carlo.schemas import (
     FilingStatus,
     FlatDistribution,
+    PlanParameterSet,
     SimulationInput,
     SnapshotRow,
     SpendingDistribution,
@@ -33,6 +47,7 @@ from vibe_carlo.schemas import (
 )
 from vibe_carlo.simulation.engine import run_simulation
 from vibe_carlo.simulation.models import load_historical_data
+from vibe_carlo.simulation.plan_engine import run_plan_simulation
 from vibe_carlo.snapshots import (
     create_snapshot,
     delete_snapshot,
@@ -146,9 +161,9 @@ def _parse_form_params(
 
 def _snapshot_to_row(raw: dict[str, object]) -> SnapshotRow:
     """Convert a raw DB dict into a typed SnapshotRow."""
-    from vibe_carlo.snapshots import _deserialize_distribution
+    from vibe_carlo.snapshots import deserialize_distribution
 
-    dist = _deserialize_distribution(str(raw["spending_distribution"]))
+    dist = deserialize_distribution(str(raw["spending_distribution"]))
     filing = FilingStatus(str(raw["filing_status"])) if raw.get("filing_status") else None
     return SnapshotRow(
         id=int(str(raw["id"])),
@@ -511,4 +526,439 @@ async def timeline_page(request: Request) -> Response:
     )
     return templates.TemplateResponse(
         request, "timeline.html", {"timeline": timeline, "user_email": user_email}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plan routes
+# ---------------------------------------------------------------------------
+
+
+def _parse_param_set_form(
+    param_name: str,
+    duration: int | None,
+    cash_value: float,
+    market_value: float,
+    bond_value: float,
+    earnings: float,
+    spending_dist_type: str,
+    spending_dist_value: float,
+    spending_dist_low: float,
+    spending_dist_high: float,
+    spending_dist_mean: float,
+    spending_dist_stddev: float,
+    filing_status: str | None,
+) -> dict[str, object]:
+    """Parse form fields into kwargs for create/update_parameter_set."""
+    spending_dist = _parse_distribution(
+        spending_dist_type,
+        spending_dist_value,
+        spending_dist_low,
+        spending_dist_high,
+        spending_dist_mean,
+        spending_dist_stddev,
+    )
+    return {
+        "name": param_name,
+        "duration": duration,
+        "cash_value": cash_value,
+        "market_value": market_value,
+        "bond_value": bond_value,
+        "earnings": earnings,
+        "spending_distribution": spending_dist,
+        "filing_status": FilingStatus(filing_status).value if filing_status else None,
+    }
+
+
+def _plan_param_sets_typed(
+    conn: object,
+    plan_id: int,
+    user_id: int,
+) -> list[PlanParameterSet]:
+    """Load parameter sets and convert to typed PlanParameterSet models."""
+    raw_list = list_parameter_sets(conn, plan_id, user_id)  # type: ignore[arg-type]
+    result: list[PlanParameterSet] = []
+    for raw in raw_list:
+        typed = param_set_to_typed(raw)
+        fs = FilingStatus(str(typed["filing_status"])) if typed.get("filing_status") else None
+        result.append(
+            PlanParameterSet(
+                id=int(str(typed["id"])),
+                plan_id=int(str(typed["plan_id"])),
+                name=str(typed["name"]),
+                order_position=int(str(typed["order_position"])),
+                duration=int(str(typed["duration"]))
+                if typed.get("duration") is not None
+                else None,
+                cash_value=float(str(typed["cash_value"])),
+                market_value=float(str(typed["market_value"])),
+                bond_value=float(str(typed["bond_value"])),
+                earnings=float(str(typed["earnings"])),
+                spending_distribution=typed["spending_distribution"],  # type: ignore[arg-type]
+                filing_status=fs,
+            )
+        )
+    return result
+
+
+@app.get("/plans", response_class=HTMLResponse)
+async def plans_page(request: Request) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        plans = list_plans(conn, user_id)
+    finally:
+        conn.close()
+    return templates.TemplateResponse(
+        request, "plans.html", {"plans": plans, "user_email": user_email}
+    )
+
+
+@app.post("/plans")
+async def create_plan_route(
+    request: Request,
+    name: str = Form(default=""),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    plan_name = name.strip()
+    if not plan_name:
+        return HTMLResponse(
+            '<p class="text-red-600 text-sm">Plan name is required.</p>',
+            status_code=422,
+        )
+    conn = get_connection(_db_path)
+    try:
+        plan_id = create_plan(conn, user_id, plan_name)
+    finally:
+        conn.close()
+    return RedirectResponse(url=f"/plans/{plan_id}", status_code=303)
+
+
+@app.get("/plans/{plan_id}", response_class=HTMLResponse)
+async def plan_author_page(
+    request: Request,
+    plan_id: int,
+    edit_param_id: int | None = Query(default=None),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        plan = get_plan(conn, plan_id, user_id)
+        if plan is None:
+            return HTMLResponse(status_code=404, content="Plan not found")
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        edit_param: PlanParameterSet | None = None
+        if edit_param_id is not None:
+            edit_param = next((ps for ps in param_sets if ps.id == edit_param_id), None)
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        request,
+        "plan_author.html",
+        {
+            "plan": plan,
+            "param_sets": param_sets,
+            "edit_param": edit_param,
+            "user_email": user_email,
+        },
+    )
+
+
+@app.post("/plans/{plan_id}/name", response_class=HTMLResponse)
+async def update_plan_name_route(
+    request: Request,
+    plan_id: int,
+    name: str = Form(default=""),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    plan_name = name.strip()
+    if not plan_name:
+        return HTMLResponse('<span class="text-red-600 text-sm">Name required</span>')
+    conn = get_connection(_db_path)
+    try:
+        found = update_plan_name(conn, plan_id, user_id, plan_name)
+    finally:
+        conn.close()
+    if not found:
+        return HTMLResponse(status_code=404, content="Plan not found")
+    return HTMLResponse('<span class="text-green-600 text-sm">Saved</span>')
+
+
+@app.delete("/plans/{plan_id}", response_class=HTMLResponse)
+async def delete_plan_route(request: Request, plan_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        found = delete_plan(conn, plan_id, user_id)
+    finally:
+        conn.close()
+    if not found:
+        return HTMLResponse(status_code=404, content="Plan not found")
+    return HTMLResponse("")
+
+
+@app.post("/plans/{plan_id}/params", response_class=HTMLResponse)
+async def add_parameter_set_route(
+    request: Request,
+    plan_id: int,
+    param_name: str = Form(default=""),
+    duration: int | None = Form(default=None),
+    cash_value: float = Form(default=0.0),
+    market_value: float = Form(default=0.0),
+    bond_value: float = Form(default=0.0),
+    earnings: float = Form(default=0.0),
+    spending_dist_type: str = Form(default="flat"),
+    spending_dist_value: float = Form(default=0.0),
+    spending_dist_low: float = Form(default=0.0),
+    spending_dist_high: float = Form(default=0.0),
+    spending_dist_mean: float = Form(default=0.0),
+    spending_dist_stddev: float = Form(default=5000.0),
+    filing_status: str | None = Form(default=None),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    try:
+        kwargs = _parse_param_set_form(
+            param_name,
+            duration,
+            cash_value,
+            market_value,
+            bond_value,
+            earnings,
+            spending_dist_type,
+            spending_dist_value,
+            spending_dist_low,
+            spending_dist_high,
+            spending_dist_mean,
+            spending_dist_stddev,
+            filing_status,
+        )
+    except (ValidationError, ValueError):
+        return HTMLResponse(
+            '<p class="text-red-600 text-sm">Invalid parameters.</p>',
+            status_code=422,
+        )
+
+    conn = get_connection(_db_path)
+    try:
+        ps_id = create_parameter_set(conn, plan_id, user_id, **kwargs)  # type: ignore[arg-type]
+        if ps_id is None:
+            return HTMLResponse(status_code=404, content="Plan not found")
+        plan = get_plan(conn, plan_id, user_id)
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/plan_params_table.html",
+        {"plan": plan, "param_sets": param_sets},
+    )
+
+
+@app.post("/plans/{plan_id}/params/{param_id}", response_class=HTMLResponse)
+async def update_parameter_set_route(
+    request: Request,
+    plan_id: int,
+    param_id: int,
+    param_name: str = Form(default=""),
+    duration: int | None = Form(default=None),
+    cash_value: float = Form(default=0.0),
+    market_value: float = Form(default=0.0),
+    bond_value: float = Form(default=0.0),
+    earnings: float = Form(default=0.0),
+    spending_dist_type: str = Form(default="flat"),
+    spending_dist_value: float = Form(default=0.0),
+    spending_dist_low: float = Form(default=0.0),
+    spending_dist_high: float = Form(default=0.0),
+    spending_dist_mean: float = Form(default=0.0),
+    spending_dist_stddev: float = Form(default=5000.0),
+    filing_status: str | None = Form(default=None),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    try:
+        kwargs = _parse_param_set_form(
+            param_name,
+            duration,
+            cash_value,
+            market_value,
+            bond_value,
+            earnings,
+            spending_dist_type,
+            spending_dist_value,
+            spending_dist_low,
+            spending_dist_high,
+            spending_dist_mean,
+            spending_dist_stddev,
+            filing_status,
+        )
+    except (ValidationError, ValueError):
+        return HTMLResponse(
+            '<p class="text-red-600 text-sm">Invalid parameters.</p>',
+            status_code=422,
+        )
+
+    conn = get_connection(_db_path)
+    try:
+        found = update_parameter_set(conn, param_id, user_id, **kwargs)  # type: ignore[arg-type]
+        if not found:
+            return HTMLResponse(status_code=404, content="Parameter set not found")
+        plan = get_plan(conn, plan_id, user_id)
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/plan_params_table.html",
+        {"plan": plan, "param_sets": param_sets},
+    )
+
+
+@app.delete("/plans/{plan_id}/params/{param_id}", response_class=HTMLResponse)
+async def delete_parameter_set_route(request: Request, plan_id: int, param_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        found = delete_parameter_set(conn, param_id, user_id)
+        if not found:
+            return HTMLResponse(status_code=404, content="Parameter set not found")
+        plan = get_plan(conn, plan_id, user_id)
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/plan_params_table.html",
+        {"plan": plan, "param_sets": param_sets},
+    )
+
+
+@app.post("/plans/{plan_id}/params/{param_id}/move", response_class=HTMLResponse)
+async def move_parameter_set_route(
+    request: Request,
+    plan_id: int,
+    param_id: int,
+    direction: str = Form(default=""),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        move_parameter_set(conn, param_id, user_id, direction)
+        plan = get_plan(conn, plan_id, user_id)
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/plan_params_table.html",
+        {"plan": plan, "param_sets": param_sets},
+    )
+
+
+@app.get("/plans/{plan_id}/simulate", response_class=HTMLResponse)
+async def plan_simulate_page(request: Request, plan_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        plan = get_plan(conn, plan_id, user_id)
+        if plan is None:
+            return HTMLResponse(status_code=404, content="Plan not found")
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    if not param_sets:
+        return RedirectResponse(url=f"/plans/{plan_id}", status_code=303)
+
+    return templates.TemplateResponse(
+        request,
+        "plan_simulate.html",
+        {"plan": plan, "param_sets": param_sets, "user_email": user_email},
+    )
+
+
+@app.post("/plans/{plan_id}/simulate", response_model=None)
+async def run_plan_simulation_route(
+    request: Request,
+    plan_id: int,
+    years_to_simulate: int = Form(default=30),
+    sample_years: int | None = Form(default=None),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        plan = get_plan(conn, plan_id, user_id)
+        if plan is None:
+            return HTMLResponse(status_code=404, content="Plan not found")
+        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    if not param_sets:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": ["Plan has no parameter sets"]},
+        )
+
+    effective_sample = sample_years if sample_years else years_to_simulate
+
+    result = await asyncio.to_thread(
+        run_plan_simulation,
+        param_sets,
+        years_to_simulate,
+        effective_sample,
+        historical_data,
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "partials/results.html",
+        {"result": result, "params": None},
     )

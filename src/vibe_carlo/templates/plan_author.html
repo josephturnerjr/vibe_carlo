@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from "partials/distribution_picker.html" import distribution_picker %}
+
+{% block content %}
+<div class="mb-4 flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-gray-700">Plan:</h2>
+    <form hx-post="/plans/{{ plan.id }}/name" hx-target="#plan-name-feedback" hx-swap="innerHTML" class="flex items-center gap-2">
+        <input type="text" name="name" value="{{ plan.name }}" required
+               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2 text-sm">
+        <button type="submit" class="text-blue-600 hover:text-blue-800 text-sm font-medium">Rename</button>
+    </form>
+    <span id="plan-name-feedback" class="text-sm"></span>
+    <a href="/plans" class="ml-auto text-gray-500 hover:text-gray-700 text-sm">&larr; Back to Plans</a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Left: Parameter Set Form -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4">
+            {% if edit_param %}Edit Parameter Set{% else %}Add Parameter Set{% endif %}
+        </h3>
+        <form
+            {% if edit_param %}
+            hx-post="/plans/{{ plan.id }}/params/{{ edit_param.id }}"
+            {% else %}
+            hx-post="/plans/{{ plan.id }}/params"
+            {% endif %}
+            hx-target="#param-table-container"
+            hx-swap="innerHTML"
+            class="space-y-4"
+        >
+            <div>
+                <label for="param_name" class="block text-sm font-medium text-gray-600 mb-1">Phase Name</label>
+                <input type="text" name="param_name" id="param_name"
+                       value="{{ edit_param.name if edit_param else '' }}"
+                       placeholder="e.g. Working, Semi-retired, Retired" required
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            </div>
+
+            <div>
+                <label for="duration" class="block text-sm font-medium text-gray-600 mb-1">Duration (years)</label>
+                <input type="number" name="duration" id="duration"
+                       value="{{ edit_param.duration if edit_param and edit_param.duration is not none else '' }}"
+                       min="1" max="80" placeholder="Leave blank for remainder"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Leave blank for the final phase (uses all remaining years)</p>
+            </div>
+
+            <h4 class="text-sm font-semibold text-gray-600">Portfolio (initial values for this phase)</h4>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label for="cash_value" class="block text-xs text-gray-500 mb-1">Cash ($)</label>
+                    <input type="number" name="cash_value" id="cash_value"
+                           value="{{ edit_param.cash_value if edit_param else 300000 }}" min="0" step="1000"
+                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                </div>
+                <div>
+                    <label for="market_value" class="block text-xs text-gray-500 mb-1">Market ($)</label>
+                    <input type="number" name="market_value" id="market_value"
+                           value="{{ edit_param.market_value if edit_param else 2000000 }}" min="0" step="1000"
+                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                </div>
+                <div>
+                    <label for="bond_value" class="block text-xs text-gray-500 mb-1">Bonds ($)</label>
+                    <input type="number" name="bond_value" id="bond_value"
+                           value="{{ edit_param.bond_value if edit_param else 0 }}" min="0" step="1000"
+                           class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                </div>
+            </div>
+
+            <div>
+                <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
+                <input type="number" name="earnings" id="earnings"
+                       value="{{ edit_param.earnings if edit_param else 0 }}" min="0" step="1000"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                <p class="text-xs text-gray-400 mt-1">Post-tax income during this phase</p>
+            </div>
+
+            <div>
+                {% if edit_param %}
+                    {% set ep = edit_param %}
+                    {% if ep.spending_distribution.dist_type == "flat" %}
+                        {{ distribution_picker("spending", "Spending ($)", default_value=ep.spending_distribution.value, step=1000, default_dist_type="flat") }}
+                    {% elif ep.spending_distribution.dist_type == "uniform" %}
+                        {{ distribution_picker("spending", "Spending ($)", step=1000, default_dist_type="uniform", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high) }}
+                    {% elif ep.spending_distribution.dist_type == "truncated_normal" %}
+                        {{ distribution_picker("spending", "Spending ($)", step=1000, default_dist_type="truncated_normal", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high, default_mean=ep.spending_distribution.mean, default_stddev=ep.spending_distribution.stddev) }}
+                    {% endif %}
+                {% else %}
+                    {{ distribution_picker("spending", "Spending ($)", default_value=60000, step=1000, default_dist_type="flat") }}
+                {% endif %}
+            </div>
+
+            <div>
+                <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
+                <select name="filing_status" id="filing_status"
+                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                    {% set fs = edit_param.filing_status if edit_param else None %}
+                    <option value="" {{ "selected" if not fs }}>None (no tax adjustment)</option>
+                    <option value="single" {{ "selected" if fs and fs.value == "single" }}>Single</option>
+                    <option value="married_jointly" {{ "selected" if fs and fs.value == "married_jointly" }}>Married Filing Jointly</option>
+                    <option value="married_separately" {{ "selected" if fs and fs.value == "married_separately" }}>Married Filing Separately</option>
+                    <option value="head_of_household" {{ "selected" if fs and fs.value == "head_of_household" }}>Head of Household</option>
+                </select>
+            </div>
+
+            <div class="flex gap-3">
+                <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-sm">
+                    {% if edit_param %}Update{% else %}Add Phase{% endif %}
+                </button>
+                {% if edit_param %}
+                <a href="/plans/{{ plan.id }}"
+                   class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-md transition-colors text-sm">
+                    Cancel
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Right: Parameter Set Table -->
+    <div>
+        <div id="param-table-container">
+            {% include "partials/plan_params_table.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

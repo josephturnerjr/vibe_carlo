@@ -137,6 +137,27 @@ class TimelineData(BaseModel):
     fan_chart: FanChartData | None
 
 
+class PlanParameterSet(BaseModel):
+    id: int
+    plan_id: int
+    name: str
+    order_position: int
+    duration: int | None = None
+    cash_value: float
+    market_value: float
+    bond_value: float
+    earnings: float = 0.0
+    spending_distribution: SpendingDistribution
+    filing_status: FilingStatus | None = None
+
+
+class PlanRow(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    parameter_set_count: int = 0
+
+
 class SnapshotRow(BaseModel):
     id: int
     name: str | None = None

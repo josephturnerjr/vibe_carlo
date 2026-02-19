@@ -6,12 +6,12 @@ import sqlite3
 from vibe_carlo.schemas import SimulationInput, SpendingDistribution
 
 
-def _serialize_distribution(dist: SpendingDistribution) -> str:
+def serialize_distribution(dist: SpendingDistribution) -> str:
     """Serialize a SpendingDistribution to a JSON string."""
     return json.dumps(dist.model_dump())
 
 
-def _deserialize_distribution(raw: str) -> SpendingDistribution:
+def deserialize_distribution(raw: str) -> SpendingDistribution:
     """Deserialize a JSON string to a SpendingDistribution."""
     from pydantic import TypeAdapter
 
@@ -43,7 +43,7 @@ def create_snapshot(
             params.market_value,
             params.bond_value,
             params.earnings,
-            _serialize_distribution(params.spending_distribution),
+            serialize_distribution(params.spending_distribution),
             params.years_to_simulate,
             params.sample_years,
             params.filing_status.value if params.filing_status else None,
@@ -107,7 +107,7 @@ def update_snapshot(
             params.market_value,
             params.bond_value,
             params.earnings,
-            _serialize_distribution(params.spending_distribution),
+            serialize_distribution(params.spending_distribution),
             params.years_to_simulate,
             params.sample_years,
             params.filing_status.value if params.filing_status else None,

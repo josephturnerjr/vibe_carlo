@@ -1,0 +1,86 @@
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-700">Phases</h3>
+        {% if param_sets %}
+        <a href="/plans/{{ plan.id }}/simulate"
+           class="bg-green-600 hover:bg-green-700 text-white font-medium py-1.5 px-3 rounded-md transition-colors text-sm">
+            Simulate Plan
+        </a>
+        {% endif %}
+    </div>
+
+    {% if param_sets %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="text-xs text-gray-500 uppercase border-b border-gray-200">
+                <tr>
+                    <th class="py-2 pr-2">#</th>
+                    <th class="py-2 pr-3">Name</th>
+                    <th class="py-2 pr-3 text-right">Portfolio</th>
+                    <th class="py-2 pr-3 text-right">Earnings</th>
+                    <th class="py-2 pr-3">Spending</th>
+                    <th class="py-2 pr-3 text-right">Duration</th>
+                    <th class="py-2">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for ps in param_sets %}
+                <tr class="hover:bg-gray-50">
+                    <td class="py-2 pr-2 text-gray-400">{{ loop.index }}</td>
+                    <td class="py-2 pr-3 font-medium text-gray-800">
+                        <a href="/plans/{{ plan.id }}?edit_param_id={{ ps.id }}" class="text-blue-600 hover:text-blue-800">{{ ps.name }}</a>
+                    </td>
+                    <td class="py-2 pr-3 text-right text-gray-600">
+                        {% if loop.first %}
+                            ${{ "{:,.0f}".format(ps.cash_value + ps.market_value + ps.bond_value) }}
+                        {% endif %}
+                    </td>
+                    <td class="py-2 pr-3 text-right text-gray-600">${{ "{:,.0f}".format(ps.earnings) }}</td>
+                    <td class="py-2 pr-3 text-gray-600 text-xs">
+                        {% if ps.spending_distribution.dist_type == "flat" %}
+                            ${{ "{:,.0f}".format(ps.spending_distribution.value) }}
+                        {% elif ps.spending_distribution.dist_type == "uniform" %}
+                            ${{ "{:,.0f}".format(ps.spending_distribution.low) }}&ndash;${{ "{:,.0f}".format(ps.spending_distribution.high) }}
+                        {% elif ps.spending_distribution.dist_type == "truncated_normal" %}
+                            ~${{ "{:,.0f}".format(ps.spending_distribution.mean) }}
+                        {% endif %}
+                    </td>
+                    <td class="py-2 pr-3 text-right text-gray-600">
+                        {% if loop.last %}
+                            <span class="text-gray-400 italic">Remainder</span>
+                        {% elif ps.duration %}
+                            {{ ps.duration }}yr
+                        {% else %}
+                            <span class="text-gray-400 italic">Remainder</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-2 whitespace-nowrap">
+                        {% if not loop.first %}
+                        <button hx-post="/plans/{{ plan.id }}/params/{{ ps.id }}/move"
+                                hx-vals='{"direction": "up"}'
+                                hx-target="#param-table-container"
+                                hx-swap="innerHTML"
+                                class="text-gray-400 hover:text-gray-600 text-xs mr-1" title="Move up">&uarr;</button>
+                        {% endif %}
+                        {% if not loop.last %}
+                        <button hx-post="/plans/{{ plan.id }}/params/{{ ps.id }}/move"
+                                hx-vals='{"direction": "down"}'
+                                hx-target="#param-table-container"
+                                hx-swap="innerHTML"
+                                class="text-gray-400 hover:text-gray-600 text-xs mr-1" title="Move down">&darr;</button>
+                        {% endif %}
+                        <button hx-delete="/plans/{{ plan.id }}/params/{{ ps.id }}"
+                                hx-target="#param-table-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Delete this parameter set?"
+                                class="text-red-500 hover:text-red-700 text-xs" title="Delete">&times;</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-sm">No phases yet. Add one using the form on the left.</p>
+    {% endif %}
+</div>
