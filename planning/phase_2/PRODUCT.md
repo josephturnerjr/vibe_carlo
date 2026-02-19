@@ -1,41 +1,35 @@
-# Phase 2 — Persistence & Accounts Product Specification
+# vibe_carlo Phase 2: Saved snapshots
 
-## Goal
-Users can create accounts, save simulation snapshots, and track how their financial projections evolve over time. Introduces back-testing: comparing current reality against previous projections.
+## Overview
+As a user, I want to see how my financial state MAY progress - via monte
+carlo simulations - but i also want to see how my financial state HAS
+progressed, by providing income and asset information multiple times
+over a period of months or years and comparing that to earlier
+simulations. This initiative implements these new capabilities in
+vibe_carlo.
 
-## Features
+## Snapshots
+At its simplest, a snapshot is the set of parameters used as input to a
+simulation, along with a date of when the snapshot was taken. 
 
-### User Accounts
-- Registration (email + password)
-- Login / logout
-- Password reset
-- Account deletion (with all associated data)
+Creating a new snapshot should happen on the same page as a simulation
+run. Adding the values does not automatically save a snapshot, because a
+user may want to play around with parameters. However, the user should
+be given the opportunity to save a snapshot after entering their data.
+When saving a snapshot, they should be prompted to enter the date of the
+sanpshot. When a user attempts to save a snapshot, it should be
+validated before being stored in the database.
 
-### Snapshots
-- Each simulation run can be saved as a named "snapshot"
-- A snapshot stores: all input parameters, full simulation output (percentiles, success rate), and a timestamp
-- Users can view a list of all their snapshots
-- Users can re-run any previous snapshot's inputs to see updated projections
+Saved snapshots should be viewable in a table. The table should show all
+parameters from the snapshot. For parameters that are a distribution,
+like spending, it should show a small visualization of the parameter,
+rather than all of the distribution parameters. Fixed distributions
+should simply say `Fixed(<value set by user>)`.
 
-### Back-Testing
-- When creating a new snapshot, users enter their current actual portfolio value
-- The system overlays the actual value on previous projection fan charts
-- Shows whether reality is tracking the median, pessimistic, or optimistic scenarios
-- Simple accuracy metric: which percentile band does reality fall in?
+A snapshot in the table should be loadable into the simulation page,
+from which a user can run a simulation, play with parameters, etc. When
+a snapshot is loaded in this way, the user should be able to update the
+existing snapshot (though not required).
 
-### Multiple Account Types
-- Model financial accounts separately: brokerage, 401(k), IRA, Roth IRA, savings
-- Each account has its own balance and contribution schedule
-- Asset allocation can vary per account
-- Simulation runs across all accounts with combined results
+A snapshot in the table should be able to be deleted.
 
-### Improved Asset Allocation
-- Expand beyond stocks/bonds to include: US stocks, international stocks, bonds, cash/money market
-- Historical data table expanded with additional asset class columns
-
-## What Phase 2 Does NOT Include
-- Tax modeling
-- Social Security or RMDs
-- Roth conversion analysis
-- Scenario comparison (what-if)
-- Variable spending rules
