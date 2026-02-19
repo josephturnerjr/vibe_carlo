@@ -21,7 +21,7 @@ from vibe_carlo.auth import (
     validate_session,
     verify_password,
 )
-from vibe_carlo.db import get_connection, init_db
+from vibe_carlo.db import cleanup_expired_sessions, get_connection, init_db
 from vibe_carlo.plans import (
     create_parameter_set,
     create_plan,
@@ -70,11 +70,22 @@ async def lifespan(app: FastAPI) -> Any:
     global historical_data  # noqa: PLW0603
     historical_data = load_historical_data()
     init_db(_db_path)
+    cleanup_expired_sessions(_db_path)
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+# ---------------------------------------------------------------------------
+# Health check (unauthenticated)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------

@@ -101,7 +101,20 @@ def init_db(db_path: Path | None = None) -> None:
         conn.execute(_CREATE_PLANS_TABLE)
         conn.execute(_CREATE_PLAN_PARAMETER_SETS_TABLE)
         _migrate_add_user_id(conn)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_expired_sessions(db_path: Path | None = None) -> int:
+    """Delete sessions whose expires_at is in the past. Returns count deleted."""
+    path = db_path or get_db_path()
+    conn = sqlite3.connect(str(path))
+    try:
+        cur = conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        conn.commit()
+        return cur.rowcount
     finally:
         conn.close()
 

@@ -1,5 +1,14 @@
 from fastapi.testclient import TestClient
 
+from vibe_carlo.app import app
+
+
+def test_health_returns_ok() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
 
 def test_index_page_renders(auth_client: TestClient) -> None:
     response = auth_client.get("/")
