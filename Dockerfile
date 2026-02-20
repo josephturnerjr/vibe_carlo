@@ -8,9 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
+COPY src/ src/
 RUN uv sync --frozen --no-dev
 
-COPY src/ src/
 
 RUN useradd --system --uid 10000 --no-create-home appuser \
     && mkdir -p /data \
