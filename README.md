@@ -40,7 +40,7 @@ Each simulation request runs 10,000 Monte Carlo paths with the following procedu
    - **Success rate**: Fraction of runs where the portfolio never reached $0
    - **Histogram**: Distribution of final-year portfolio values across all 10,000 runs
 
-All dollar outputs are in real (inflation-adjusted) terms. Contributions and spending are assumed to be in constant real dollars.
+All outputs are in real (inflation-adjusted) dollars. Contributions and spending are assumed to be in constant real dollars.
 
 ## Running Locally
 
