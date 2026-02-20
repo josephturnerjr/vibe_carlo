@@ -1,11 +1,12 @@
 # Deploying vibe_carlo
 
-vibe_carlo runs as a Docker container on a single VPS behind a Caddy reverse proxy with automatic TLS.
+vibe_carlo runs as a Docker Compose service on a single VPS behind a Caddy reverse proxy with automatic TLS. All projects on the VPS share an external Docker network (`docklinode`) so Caddy can reach each service by container name.
 
 ## Prerequisites
 
-- Docker installed on the VPS
-- Caddy installed and managing TLS (Let's Encrypt)
+- Docker and Docker Compose installed on the VPS
+- A `docklinode` external Docker network (`docker network create docklinode`)
+- Caddy running on the same `docklinode` network, managing TLS (Let's Encrypt)
 - A domain name with DNS pointing to the VPS
 
 ## Environment variables
@@ -15,60 +16,55 @@ vibe_carlo runs as a Docker container on a single VPS behind a Caddy reverse pro
 | `VIBE_CARLO_DB` | `/data/vibe_carlo.db` | Path to the SQLite database file |
 | `VIBE_CARLO_SECURE_COOKIES` | `1` | Set to `1` to mark session cookies as `Secure` (always on in the production image) |
 
-## Building the image
+## Building and running
 
 ```bash
-docker build -t vibe-carlo .
+docker compose up -d --build
 ```
 
-## Running the container
+This builds the image and starts the service. The container joins the `docklinode` network so Caddy can proxy to it directly — no host port mapping is needed.
+
+To stop the service:
 
 ```bash
-docker run -d \
-  --name vibe-carlo \
-  --restart unless-stopped \
-  -p 127.0.0.1:8000:8000 \
-  -v vibe-carlo-data:/data \
-  vibe-carlo
+docker compose down
 ```
 
-- `-v vibe-carlo-data:/data` — persists the SQLite database across container restarts
-- `-p 127.0.0.1:8000:8000` — binds only to localhost since Caddy handles external traffic
-- `--restart unless-stopped` — auto-restarts on crash or reboot
+The named volume `vibe-carlo-data` persists across restarts and `down`/`up` cycles.
 
 ## Creating your first user
 
 ```bash
-docker exec vibe-carlo uv run vibe-carlo-users create user@example.com --password 'your-password'
+docker compose exec vibe-carlo uv run vibe-carlo-users create user@example.com --password 'your-password'
 ```
 
 ## User management
 
 ```bash
 # List all users
-docker exec vibe-carlo uv run vibe-carlo-users list
+docker compose exec vibe-carlo uv run vibe-carlo-users list
 
 # Change a password
-docker exec vibe-carlo uv run vibe-carlo-users change-password user@example.com --password 'new-password'
+docker compose exec vibe-carlo uv run vibe-carlo-users change-password user@example.com --password 'new-password'
 
 # Delete a user
-docker exec vibe-carlo uv run vibe-carlo-users delete user@example.com
+docker compose exec vibe-carlo uv run vibe-carlo-users delete user@example.com
 
 # Assign unowned snapshots to a user
-docker exec vibe-carlo uv run vibe-carlo-users assign-snapshots user@example.com
+docker compose exec vibe-carlo uv run vibe-carlo-users assign-snapshots user@example.com
 ```
 
 ## Caddy configuration
 
-Example Caddyfile snippet:
+Example Caddyfile snippet (Caddy must also be on the `docklinode` network):
 
 ```
 your-domain.com {
-    reverse_proxy localhost:8000
+    reverse_proxy vibe-carlo:8000
 }
 ```
 
-Caddy automatically provisions and renews TLS certificates via Let's Encrypt.
+Caddy reaches the container by its name (`vibe-carlo`) over the shared Docker network. TLS certificates are provisioned and renewed automatically via Let's Encrypt.
 
 ## Git hook deployment
 
@@ -79,27 +75,14 @@ Example `post-receive` hook (on the VPS bare repo):
 set -e
 
 WORK_DIR=/opt/vibe-carlo
-CONTAINER_NAME=vibe-carlo
 
 # Check out the latest code
 git --work-tree="$WORK_DIR" --git-dir="$(pwd)" checkout -f
 
 cd "$WORK_DIR"
 
-# Build the new image
-docker build -t vibe-carlo .
-
-# Stop and remove the old container (data volume persists)
-docker stop "$CONTAINER_NAME" 2>/dev/null || true
-docker rm "$CONTAINER_NAME" 2>/dev/null || true
-
-# Start the new container
-docker run -d \
-  --name "$CONTAINER_NAME" \
-  --restart unless-stopped \
-  -p 127.0.0.1:8000:8000 \
-  -v vibe-carlo-data:/data \
-  vibe-carlo
+# Rebuild and restart
+docker compose up -d --build
 
 echo "Deploy complete."
 ```
