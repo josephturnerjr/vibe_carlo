@@ -12,8 +12,9 @@ COPY src/ src/
 RUN uv sync --frozen --no-dev
 
 RUN useradd --system --uid 10000 vibeuser \
+    && mkdir -p /home/vibeuser \
     && mkdir -p /data \
-    && chown -R vibeuser:vibeuser /app /data
+    && chown -R vibeuser:vibeuser /app /data /home/vibeuser
 
 ENV VIBE_CARLO_DB=/data/vibe_carlo.db
 ENV VIBE_CARLO_SECURE_COOKIES=1
