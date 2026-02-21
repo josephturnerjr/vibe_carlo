@@ -12,7 +12,7 @@ COPY src/ src/
 RUN uv sync --frozen --no-dev
 
 
-RUN useradd --system --uid 10000 --no-create-home appuser \
+RUN useradd --system --uid 10000 appuser \
     && mkdir -p /data \
     && chown -R appuser:appuser /app /data
 
