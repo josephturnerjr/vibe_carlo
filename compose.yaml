@@ -1,3 +1,5 @@
+name: vibe-carlo
+
 services:
   vibe-carlo:
     build: .
