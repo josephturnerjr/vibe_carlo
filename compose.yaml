@@ -3,7 +3,6 @@ name: vibe-carlo
 services:
   vibe-carlo:
     build: .
-    container_name: vibe-carlo
     restart: unless-stopped
     volumes:
       - /opt/montecarlo:/data
