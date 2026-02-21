@@ -11,15 +11,14 @@ COPY pyproject.toml uv.lock ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev
 
-
-RUN useradd --system --uid 10000 appuser \
+RUN useradd --system --uid 10000 vibeuser \
     && mkdir -p /data \
-    && chown -R appuser:appuser /app /data
+    && chown -R vibeuser:vibeuser /app /data
 
 ENV VIBE_CARLO_DB=/data/vibe_carlo.db
 ENV VIBE_CARLO_SECURE_COOKIES=1
 
-USER appuser
+USER vibeuser
 
 EXPOSE 8000
 
