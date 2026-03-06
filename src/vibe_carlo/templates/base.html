@@ -17,8 +17,13 @@
                 <h1 class="text-2xl font-bold text-gray-800"><a href="/" class="hover:text-blue-600">vibe_carlo</a></h1>
                 <p class="text-sm text-gray-500">Monte Carlo financial projection</p>
             </div>
-            <nav class="flex items-center gap-4 text-sm font-medium">
-                {% if user_email %}
+            {% if user_email %}
+            <button id="mobile-menu-btn" class="md:hidden p-2 text-gray-600 hover:text-blue-600" aria-label="Toggle menu">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path id="menu-icon" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+            <nav class="hidden md:flex items-center gap-4 text-sm font-medium">
                 <a href="/" class="text-gray-600 hover:text-blue-600">Simulation</a>
                 <a href="/snapshots" class="text-gray-600 hover:text-blue-600">Snapshots</a>
                 <a href="/plans" class="text-gray-600 hover:text-blue-600">Plans</a>
@@ -28,9 +33,35 @@
                 <form method="post" action="/logout" class="inline">
                     <button type="submit" class="text-gray-600 hover:text-red-600">Logout</button>
                 </form>
-                {% endif %}
             </nav>
+            {% endif %}
         </div>
+        {% if user_email %}
+        <nav id="mobile-menu" class="hidden md:hidden border-t border-gray-100 px-6 py-3 text-sm font-medium">
+            <div class="flex flex-col gap-3">
+                <a href="/" class="text-gray-600 hover:text-blue-600">Simulation</a>
+                <a href="/snapshots" class="text-gray-600 hover:text-blue-600">Snapshots</a>
+                <a href="/plans" class="text-gray-600 hover:text-blue-600">Plans</a>
+                <a href="/timeline" class="text-gray-600 hover:text-blue-600">Timeline</a>
+                <div class="border-t border-gray-100 pt-3 flex items-center justify-between">
+                    <span class="text-gray-500">{{ user_email }}</span>
+                    <form method="post" action="/logout" class="inline">
+                        <button type="submit" class="text-gray-600 hover:text-red-600">Logout</button>
+                    </form>
+                </div>
+            </div>
+        </nav>
+        <script>
+            document.getElementById('mobile-menu-btn').addEventListener('click', function() {
+                const menu = document.getElementById('mobile-menu');
+                const icon = document.getElementById('menu-icon');
+                const open = menu.classList.toggle('hidden');
+                icon.setAttribute('d', open
+                    ? 'M4 6h16M4 12h16M4 18h16'
+                    : 'M6 18L18 6M6 6l12 12');
+            });
+        </script>
+        {% endif %}
     </header>
     <main class="max-w-6xl mx-auto px-6 py-8">
         {% block content %}{% endblock %}

@@ -1,18 +1,18 @@
 {% macro distribution_picker(prefix, label, default_value=0, step=1000, default_dist_type="flat", default_low=0, default_high=0, default_mean=0, default_stddev=5000) %}
-<div class="space-y-3">
-    <label class="block text-sm font-medium text-gray-600">{{ label }}</label>
+<div>
+    <label class="block text-sm font-medium text-gray-600 mb-1">{{ label }}</label>
 
     <!-- Distribution type selector -->
     <select name="{{ prefix }}_dist_type" id="{{ prefix }}_dist_type"
             onchange="updateDistFields('{{ prefix }}')"
-            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2 text-sm">
+            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         <option value="flat" {{ "selected" if default_dist_type == "flat" }}>Fixed Amount</option>
         <option value="uniform" {{ "selected" if default_dist_type == "uniform" }}>Uniform (range)</option>
         <option value="truncated_normal" {{ "selected" if default_dist_type == "truncated_normal" }}>Normal (bell curve)</option>
     </select>
 
     <!-- Flat: single value -->
-    <div id="{{ prefix }}_flat_fields" {{ 'class="hidden"' if default_dist_type != "flat" }}>
+    <div id="{{ prefix }}_flat_fields" {{ 'class="hidden mt-4"' if default_dist_type != "flat" else 'class="mt-4"' }}>
         <input type="number" name="{{ prefix }}_dist_value" id="{{ prefix }}_dist_value"
                value="{{ default_value }}" min="0" step="{{ step }}"
                {{ "disabled" if default_dist_type != "flat" }}
@@ -21,7 +21,7 @@
     </div>
 
     <!-- Uniform: low + high -->
-    <div id="{{ prefix }}_uniform_fields" {{ 'class="hidden"' if default_dist_type != "uniform" }}>
+    <div id="{{ prefix }}_uniform_fields" {{ 'class="hidden mt-4"' if default_dist_type != "uniform" else 'class="mt-4"' }}>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
@@ -41,7 +41,7 @@
     </div>
 
     <!-- Truncated Normal: low, high, mean, stddev -->
-    <div id="{{ prefix }}_truncated_normal_fields" {{ 'class="hidden"' if default_dist_type != "truncated_normal" }}>
+    <div id="{{ prefix }}_truncated_normal_fields" {{ 'class="hidden mt-4"' if default_dist_type != "truncated_normal" else 'class="mt-4"' }}>
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Low ($)</label>
@@ -75,6 +75,6 @@
     </div>
 
     <!-- Preview chart -->
-    <div id="{{ prefix }}_preview" style="height: 96px;"></div>
+    <div id="{{ prefix }}_preview" class="mt-4" style="height: 96px;"></div>
 </div>
 {% endmacro %}

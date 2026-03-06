@@ -62,7 +62,7 @@ function updateDistPreview(prefix) {
         showlegend: false,
     };
 
-    Plotly.react(previewEl, traces, layout, { responsive: true, displayModeBar: false });
+    Plotly.react(previewEl, traces, layout, { responsive: true, displayModeBar: false, staticPlot: true });
 }
 
 function _uniformTrace(low, high) {

@@ -6,7 +6,7 @@
     <h2 class="text-lg font-semibold text-gray-700">Plan:</h2>
     <form hx-post="/plans/{{ plan.id }}/name" hx-target="#plan-name-feedback" hx-swap="innerHTML" class="flex items-center gap-2">
         <input type="text" name="name" value="{{ plan.name }}" required
-               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2 text-sm">
+               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         <button type="submit" class="text-blue-600 hover:text-blue-800 text-sm font-medium">Rename</button>
     </form>
     <span id="plan-name-feedback" class="text-sm"></span>

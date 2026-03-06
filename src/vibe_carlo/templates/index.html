@@ -236,6 +236,7 @@ function renderCharts() {
         legend: { orientation: 'h', y: -0.2 },
         margin: { t: 20, r: 20 },
         hovermode: 'x unified',
+        dragmode: 'ontouchstart' in window ? false : 'zoom',
     };
 
     var histTrace = {
@@ -249,6 +250,7 @@ function renderCharts() {
         yaxis: { title: 'Frequency' },
         margin: { t: 20, r: 20 },
         bargap: 0.05,
+        dragmode: 'ontouchstart' in window ? false : 'zoom',
     };
 
     Plotly.newPlot('fan-chart', fanTraces, fanLayout, { responsive: true });

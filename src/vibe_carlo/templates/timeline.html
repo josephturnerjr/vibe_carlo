@@ -151,6 +151,7 @@
         margin: { t: 20, r: 20 },
         hovermode: 'closest',
         annotations: annotations,
+        dragmode: 'ontouchstart' in window ? false : 'zoom',
     };
 
     Plotly.newPlot('timeline-chart', traces, layout, { responsive: true });
