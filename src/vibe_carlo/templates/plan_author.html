@@ -51,19 +51,19 @@
                 <div>
                     <label for="cash_value" class="block text-xs text-gray-500 mb-1">Cash ($)</label>
                     <input type="number" name="cash_value" id="cash_value"
-                           value="{{ edit_param.cash_value if edit_param else 300000 }}" min="0" step="1000"
+                           value="{{ edit_param.cash_value if edit_param else 300000 }}" min="0" step="1"
                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
                 </div>
                 <div>
                     <label for="market_value" class="block text-xs text-gray-500 mb-1">Market ($)</label>
                     <input type="number" name="market_value" id="market_value"
-                           value="{{ edit_param.market_value if edit_param else 2000000 }}" min="0" step="1000"
+                           value="{{ edit_param.market_value if edit_param else 2000000 }}" min="0" step="1"
                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
                 </div>
                 <div>
                     <label for="bond_value" class="block text-xs text-gray-500 mb-1">Bonds ($)</label>
                     <input type="number" name="bond_value" id="bond_value"
-                           value="{{ edit_param.bond_value if edit_param else 0 }}" min="0" step="1000"
+                           value="{{ edit_param.bond_value if edit_param else 0 }}" min="0" step="1"
                            class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
                 </div>
             </div>
@@ -71,7 +71,7 @@
             <div>
                 <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
                 <input type="number" name="earnings" id="earnings"
-                       value="{{ edit_param.earnings if edit_param else 0 }}" min="0" step="1000"
+                       value="{{ edit_param.earnings if edit_param else 0 }}" min="0" step="1"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
                 <p class="text-xs text-gray-400 mt-1">Post-tax income during this phase</p>
             </div>
@@ -80,14 +80,14 @@
                 {% if edit_param %}
                     {% set ep = edit_param %}
                     {% if ep.spending_distribution.dist_type == "flat" %}
-                        {{ distribution_picker("spending", "Spending ($)", default_value=ep.spending_distribution.value, step=1000, default_dist_type="flat") }}
+                        {{ distribution_picker("spending", "Spending ($)", default_value=ep.spending_distribution.value, step=1, default_dist_type="flat") }}
                     {% elif ep.spending_distribution.dist_type == "uniform" %}
-                        {{ distribution_picker("spending", "Spending ($)", step=1000, default_dist_type="uniform", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high) }}
+                        {{ distribution_picker("spending", "Spending ($)", step=1, default_dist_type="uniform", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high) }}
                     {% elif ep.spending_distribution.dist_type == "truncated_normal" %}
-                        {{ distribution_picker("spending", "Spending ($)", step=1000, default_dist_type="truncated_normal", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high, default_mean=ep.spending_distribution.mean, default_stddev=ep.spending_distribution.stddev) }}
+                        {{ distribution_picker("spending", "Spending ($)", step=1, default_dist_type="truncated_normal", default_low=ep.spending_distribution.low, default_high=ep.spending_distribution.high, default_mean=ep.spending_distribution.mean, default_stddev=ep.spending_distribution.stddev) }}
                     {% endif %}
                 {% else %}
-                    {{ distribution_picker("spending", "Spending ($)", default_value=60000, step=1000, default_dist_type="flat") }}
+                    {{ distribution_picker("spending", "Spending ($)", default_value=60000, step=1, default_dist_type="flat") }}
                 {% endif %}
             </div>
 

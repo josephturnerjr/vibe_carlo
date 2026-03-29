@@ -55,10 +55,32 @@ from vibe_carlo.snapshots import (
     list_snapshots,
     update_snapshot,
 )
+from vibe_carlo.statements import (
+    create_account,
+    create_statement,
+    delete_account,
+    delete_statement,
+    get_latest_statement,
+    get_statement,
+    list_accounts,
+    list_statements,
+    update_account,
+    update_statement_date,
+)
 from vibe_carlo.timeline import compute_timeline
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+def _format_accounting(value: float) -> str:
+    """Format a dollar value in accounting style: $1,234.56 or ($1,234.56)."""
+    if value < 0:
+        return f"(${abs(value):,.2f})"
+    return f"${value:,.2f}"
+
+
+templates.env.filters["accounting"] = _format_accounting
 
 historical_data: npt.NDArray[np.float64]
 _db_path: Path | None = None
@@ -538,6 +560,193 @@ async def timeline_page(request: Request) -> Response:
     return templates.TemplateResponse(
         request, "timeline.html", {"timeline": timeline, "user_email": user_email}
     )
+
+
+# ---------------------------------------------------------------------------
+# Statement routes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/statements", response_class=HTMLResponse)
+async def statements_page(request: Request) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        stmts = list_statements(conn, user_id)
+    finally:
+        conn.close()
+
+    from datetime import date
+
+    return templates.TemplateResponse(
+        request,
+        "statements.html",
+        {"statements": stmts, "today": date.today().isoformat(), "user_email": user_email},
+    )
+
+
+@app.post("/statements")
+async def create_statement_route(
+    request: Request,
+    statement_date: str = Form(default=""),
+    copy_from_latest: str = Form(default="false"),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    if not statement_date:
+        return HTMLResponse(
+            '<p class="text-red-600 text-sm">Date is required.</p>',
+            status_code=422,
+        )
+
+    conn = get_connection(_db_path)
+    try:
+        # Find latest before creating the new one
+        latest_accounts: list[dict[str, object]] = []
+        if copy_from_latest == "true":
+            latest = get_latest_statement(conn, user_id)
+            if latest is not None:
+                latest_accounts = list_accounts(conn, int(str(latest["id"])), user_id)
+
+        stmt_id = create_statement(conn, user_id, statement_date)
+
+        for acct in latest_accounts:
+            create_account(
+                conn,
+                stmt_id,
+                user_id,
+                name=str(acct["name"]),
+                account_type=str(acct["account_type"]),
+                value=abs(float(str(acct["value"]))),
+            )
+    finally:
+        conn.close()
+
+    return RedirectResponse(url=f"/statements/{stmt_id}", status_code=303)
+
+
+@app.get("/statements/{statement_id}", response_class=HTMLResponse)
+async def statement_edit_page(request: Request, statement_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        stmt = get_statement(conn, statement_id, user_id)
+        if stmt is None:
+            return HTMLResponse(status_code=404, content="Statement not found")
+        accounts = list_accounts(conn, statement_id, user_id)
+    finally:
+        conn.close()
+
+    assets = [a for a in accounts if a["account_type"] == "asset"]
+    liabilities = [a for a in accounts if a["account_type"] == "liability"]
+
+    return templates.TemplateResponse(
+        request,
+        "statement_edit.html",
+        {
+            "statement": stmt,
+            "assets": assets,
+            "liabilities": liabilities,
+            "user_email": user_email,
+        },
+    )
+
+
+@app.post("/statements/{statement_id}", response_class=HTMLResponse)
+async def save_statement_route(request: Request, statement_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    form = await request.form()
+    new_date = str(form.get("statement_date", ""))
+    if not new_date:
+        return HTMLResponse(
+            '<p class="text-red-600 text-sm">Date is required.</p>',
+            status_code=422,
+        )
+
+    account_ids = form.getlist("account_ids")
+    account_names = form.getlist("account_names")
+    account_types = form.getlist("account_types")
+    account_values = form.getlist("account_values")
+
+    conn = get_connection(_db_path)
+    try:
+        stmt = get_statement(conn, statement_id, user_id)
+        if stmt is None:
+            return HTMLResponse(status_code=404, content="Statement not found")
+
+        update_statement_date(conn, statement_id, user_id, new_date)
+
+        # Get existing account IDs to detect deletions
+        existing_accounts = list_accounts(conn, statement_id, user_id)
+        existing_ids = {int(str(a["id"])) for a in existing_accounts}
+        form_ids: set[int] = set()
+
+        for i in range(len(account_names)):
+            acct_id_str = str(account_ids[i]) if i < len(account_ids) else ""
+            acct_name = str(account_names[i])
+            acct_type = str(account_types[i]) if i < len(account_types) else "asset"
+            acct_value = float(str(account_values[i])) if i < len(account_values) else 0.0
+
+            if acct_id_str:
+                acct_id = int(acct_id_str)
+                form_ids.add(acct_id)
+                update_account(
+                    conn,
+                    acct_id,
+                    user_id,
+                    name=acct_name,
+                    account_type=acct_type,
+                    value=acct_value,
+                )
+            else:
+                create_account(
+                    conn,
+                    statement_id,
+                    user_id,
+                    name=acct_name,
+                    account_type=acct_type,
+                    value=acct_value,
+                )
+
+        # Delete accounts that were removed from the form
+        for removed_id in existing_ids - form_ids:
+            delete_account(conn, removed_id, user_id)
+    finally:
+        conn.close()
+
+    return HTMLResponse('<p class="text-green-600 text-sm">Saved.</p>')
+
+
+@app.delete("/statements/{statement_id}", response_class=HTMLResponse)
+async def delete_statement_route(request: Request, statement_id: int) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        found = delete_statement(conn, statement_id, user_id)
+    finally:
+        conn.close()
+    if not found:
+        return HTMLResponse(status_code=404, content="Statement not found")
+    return HTMLResponse("")
 
 
 # ---------------------------------------------------------------------------

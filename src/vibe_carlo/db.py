@@ -69,6 +69,29 @@ CREATE TABLE IF NOT EXISTS plan_parameter_sets (
 );
 """
 
+_CREATE_STATEMENTS_TABLE = """\
+CREATE TABLE IF NOT EXISTS statements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    statement_date TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_STATEMENT_ACCOUNTS_TABLE = """\
+CREATE TABLE IF NOT EXISTS statement_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id INTEGER NOT NULL REFERENCES statements(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    account_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    order_position INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
 
 def _migrate_add_user_id(conn: sqlite3.Connection) -> None:
     """Add user_id column to snapshots table if it doesn't exist."""
@@ -100,6 +123,8 @@ def init_db(db_path: Path | None = None) -> None:
         conn.execute(_CREATE_SESSIONS_TABLE)
         conn.execute(_CREATE_PLANS_TABLE)
         conn.execute(_CREATE_PLAN_PARAMETER_SETS_TABLE)
+        conn.execute(_CREATE_STATEMENTS_TABLE)
+        conn.execute(_CREATE_STATEMENT_ACCOUNTS_TABLE)
         _migrate_add_user_id(conn)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()

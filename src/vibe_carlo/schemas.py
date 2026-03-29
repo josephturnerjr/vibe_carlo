@@ -172,3 +172,29 @@ class SnapshotRow(BaseModel):
     filing_status: FilingStatus | None = None
     created_at: str | None = None
     updated_at: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Asset statement models
+# ---------------------------------------------------------------------------
+
+
+class AccountType(StrEnum):
+    asset = "asset"
+    liability = "liability"
+
+
+class StatementRow(BaseModel):
+    id: int
+    user_id: int
+    statement_date: str
+    net_worth: float = 0.0
+
+
+class StatementAccountRow(BaseModel):
+    id: int
+    statement_id: int
+    name: str
+    account_type: AccountType
+    value: float
+    order_position: int

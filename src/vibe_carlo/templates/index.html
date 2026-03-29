@@ -23,17 +23,17 @@
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
             <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
-            <input type="number" name="cash_value" id="cash_value" value="{{ snapshot.cash_value if snapshot else 300000 }}" min="0" step="1000"
+            <input type="number" name="cash_value" id="cash_value" value="{{ snapshot.cash_value if snapshot else 300000 }}" min="0" step="1"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="market_value" class="block text-sm font-medium text-gray-600 mb-1">Market / Stocks ($)</label>
-            <input type="number" name="market_value" id="market_value" value="{{ snapshot.market_value if snapshot else 2000000 }}" min="0" step="1000"
+            <input type="number" name="market_value" id="market_value" value="{{ snapshot.market_value if snapshot else 2000000 }}" min="0" step="1"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
         <div>
             <label for="bond_value" class="block text-sm font-medium text-gray-600 mb-1">Bonds ($)</label>
-            <input type="number" name="bond_value" id="bond_value" value="{{ snapshot.bond_value if snapshot else 0 }}" min="0" step="1000"
+            <input type="number" name="bond_value" id="bond_value" value="{{ snapshot.bond_value if snapshot else 0 }}" min="0" step="1"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
         </div>
     </div>
@@ -42,21 +42,21 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
             <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
-            <input type="number" name="earnings" id="earnings" value="{{ snapshot.earnings if snapshot else 400000 }}" min="0" step="1000"
+            <input type="number" name="earnings" id="earnings" value="{{ snapshot.earnings if snapshot else 400000 }}" min="0" step="1"
                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
             <p class="text-xs text-gray-400 mt-1">Post-tax income from all sources (salary, Social Security, pension, etc.)</p>
         </div>
         <div>
             {% if snapshot %}
                 {% if snapshot.spending_distribution.dist_type == "flat" %}
-                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=snapshot.spending_distribution.value, step=1000, default_dist_type="flat") }}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=snapshot.spending_distribution.value, step=1, default_dist_type="flat") }}
                 {% elif snapshot.spending_distribution.dist_type == "uniform" %}
-                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1000, default_dist_type="uniform", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high) }}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1, default_dist_type="uniform", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high) }}
                 {% elif snapshot.spending_distribution.dist_type == "truncated_normal" %}
-                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1000, default_dist_type="truncated_normal", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high, default_mean=snapshot.spending_distribution.mean, default_stddev=snapshot.spending_distribution.stddev) }}
+                    {{ distribution_picker("spending", "Spending / Withdrawals ($)", step=1, default_dist_type="truncated_normal", default_low=snapshot.spending_distribution.low, default_high=snapshot.spending_distribution.high, default_mean=snapshot.spending_distribution.mean, default_stddev=snapshot.spending_distribution.stddev) }}
                 {% endif %}
             {% else %}
-                {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1000, default_dist_type="truncated_normal", default_low=55000, default_high=100000, default_mean=74000, default_stddev=5000) }}
+                {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1, default_dist_type="truncated_normal", default_low=55000, default_high=100000, default_mean=74000, default_stddev=5000) }}
             {% endif %}
         </div>
     </div>
