@@ -56,3 +56,7 @@ Open http://localhost:8000 in your browser.
 ```bash
 uv run pytest tests/ -v
 ```
+
+The JS-parity tests in `tests/test_client_sim_parity.py` invoke the client-side
+simulation engine via `node` and compare the output to the Python reference. They
+skip when Node ≥ 18 is not on `PATH`; install Node for full coverage.

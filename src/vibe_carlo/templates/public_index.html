@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% from "partials/distribution_picker.html" import distribution_picker %}
+
+{% block content %}
+<form id="sim-form" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-6">
+    <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-700">Portfolio</h2>
+        <span class="text-xs text-gray-400">Runs entirely in your browser</span>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+            <label for="cash_value" class="block text-sm font-medium text-gray-600 mb-1">Cash ($)</label>
+            <input type="number" name="cash_value" id="cash_value" value="30000" min="0" step="1"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="market_value" class="block text-sm font-medium text-gray-600 mb-1">Market / Stocks ($)</label>
+            <input type="number" name="market_value" id="market_value" value="500000" min="0" step="1"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+        <div>
+            <label for="bond_value" class="block text-sm font-medium text-gray-600 mb-1">Bonds ($)</label>
+            <input type="number" name="bond_value" id="bond_value" value="100000" min="0" step="1"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        </div>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-700">Annual Cash Flows (real dollars)</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label for="earnings" class="block text-sm font-medium text-gray-600 mb-1">Earnings ($)</label>
+            <input type="number" name="earnings" id="earnings" value="100000" min="0" step="1"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            <p class="text-xs text-gray-400 mt-1">Post-tax income from all sources (salary, Social Security, pension, etc.)</p>
+        </div>
+        <div>
+            {{ distribution_picker("spending", "Spending / Withdrawals ($)", default_value=0, step=1, default_dist_type="truncated_normal", default_low=50000, default_high=100000, default_mean=75000, default_stddev=10000) }}
+        </div>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-700">Tax Settings (optional)</h2>
+    <p class="text-xs text-gray-400 -mt-4">For traditional (pre-tax) retirement account withdrawals. Adjusts withdrawals to cover federal income tax.</p>
+    <div>
+        <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
+        <select name="filing_status" id="filing_status"
+                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+            <option value="">None (no tax adjustment)</option>
+            <option value="single" selected>Single</option>
+            <option value="married_jointly">Married Filing Jointly</option>
+            <option value="married_separately">Married Filing Separately</option>
+            <option value="head_of_household">Head of Household</option>
+        </select>
+    </div>
+
+    <h2 class="text-lg font-semibold text-gray-700">Simulation</h2>
+    <div>
+        <label for="years_to_simulate" class="block text-sm font-medium text-gray-600 mb-1">Years to simulate</label>
+        <input type="number" name="years_to_simulate" id="years_to_simulate" value="30" min="1" max="80"
+               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+    </div>
+
+    <button type="submit" id="sim-button"
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
+        Run Simulation
+    </button>
+
+    <p id="sim-progress" class="text-sm text-gray-500 text-center min-h-[1.25rem]"></p>
+</form>
+
+<div id="results" class="mt-8"></div>
+
+<script type="application/json" id="historical-data">{{ historical_data_json | safe }}</script>
+
+<script>
+(function() {
+    var form = document.getElementById('sim-form');
+    var button = document.getElementById('sim-button');
+    var progress = document.getElementById('sim-progress');
+    var resultsEl = document.getElementById('results');
+
+    var historicalData = null;
+    function loadHistoricalData() {
+        if (historicalData !== null) return historicalData;
+        var dataEl = document.getElementById('historical-data');
+        var rows = JSON.parse(dataEl.textContent);
+        var n = rows.length;
+        var flat = new Float64Array(n * 3);
+        for (var i = 0; i < n; i++) {
+            flat[i * 3] = rows[i][0];
+            flat[i * 3 + 1] = rows[i][1];
+            flat[i * 3 + 2] = rows[i][2];
+        }
+        historicalData = flat;
+        return flat;
+    }
+
+    var aborted = false;
+    var running = false;
+
+    function setIdle() {
+        running = false;
+        aborted = false;
+        button.textContent = 'Run Simulation';
+        button.classList.remove('bg-red-600', 'hover:bg-red-700');
+        button.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }
+    function setRunning() {
+        running = true;
+        aborted = false;
+        button.textContent = 'Stop';
+        button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        button.classList.add('bg-red-600', 'hover:bg-red-700');
+    }
+
+    function showError(msg) {
+        purgeSimulationCharts();
+        resultsEl.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-md p-4 text-red-700 text-sm">' + msg + '</div>';
+    }
+
+    function formatDollars(val) {
+        return '$' + Math.round(val).toLocaleString('en-US');
+    }
+
+    function renderResults(result, params, kCompleted, nRuns) {
+        purgeSimulationCharts();
+        if (!result) {
+            resultsEl.innerHTML = '<div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800 text-sm">Stopped before any runs completed — no results to show.</div>';
+            return;
+        }
+
+        var pct = (result.success_rate * 100).toFixed(1);
+        var pctClass = result.success_rate >= 0.9 ? 'text-green-600'
+                     : result.success_rate >= 0.7 ? 'text-yellow-600'
+                     : 'text-red-600';
+        var partialNote = '';
+        if (kCompleted < nRuns) {
+            partialNote = '<p class="text-xs text-yellow-700 mt-1 font-medium">Stopped at ' +
+                kCompleted.toLocaleString() + ' / ' + nRuns.toLocaleString() + ' runs</p>';
+        }
+
+        var html = '';
+        html += '<div class="space-y-8">';
+        html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">';
+        html += '<p class="text-sm text-gray-500 uppercase tracking-wide">Portfolio Survival Rate</p>';
+        html += '<p class="text-4xl font-bold mt-1 ' + pctClass + '">' + pct + '%</p>';
+        html += '<p class="text-xs text-gray-400 mt-1">of ' + kCompleted.toLocaleString() + ' simulations never reached $0</p>';
+        html += partialNote;
+        html += '</div>';
+
+        if (result.gross_withdrawal !== null) {
+            var gross = result.gross_withdrawal;
+            var etr = result.effective_tax_rate;
+            var distType = params.spending_distribution.dist_type;
+            html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+            html += '<p class="text-sm text-gray-500 uppercase tracking-wide mb-2">Federal Tax Adjustment</p>';
+            if (gross > 0) {
+                var grossLabel = distType !== 'flat' ? 'Avg gross' : 'Gross';
+                var etrLabel = distType !== 'flat' ? 'Avg effective' : 'Effective';
+                html += '<div class="grid grid-cols-2 gap-4 text-center">';
+                html += '<div><p class="text-2xl font-bold text-gray-800">' + formatDollars(gross) + '</p>';
+                html += '<p class="text-xs text-gray-400">' + grossLabel + ' withdrawal / year</p></div>';
+                html += '<div><p class="text-2xl font-bold text-gray-800">' + (etr * 100).toFixed(1) + '%</p>';
+                html += '<p class="text-xs text-gray-400">' + etrLabel + ' tax rate</p></div>';
+                html += '</div>';
+                if (distType === 'flat') {
+                    html += '<p class="text-xs text-gray-400 mt-3">Earnings cover part of spending; the shortfall of ' + formatDollars(gross) + ' must be withdrawn from the portfolio to cover the remainder plus federal income tax.</p>';
+                } else {
+                    html += '<p class="text-xs text-gray-400 mt-3">Average gross portfolio withdrawal across all simulation samples to cover the spending shortfall beyond earnings, including federal income tax.</p>';
+                }
+            } else {
+                html += '<p class="text-sm text-gray-600">Earnings cover all spending — no portfolio withdrawal needed.</p>';
+            }
+            html += '</div>';
+        }
+
+        html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+        html += '<h3 class="text-lg font-semibold text-gray-700 mb-4">Portfolio Projection (real dollars)</h3>';
+        html += '<div id="fan-chart"></div>';
+        html += '</div>';
+
+        html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+        html += '<h3 class="text-lg font-semibold text-gray-700 mb-4">Final Year Portfolio Distribution</h3>';
+        html += '<div id="histogram"></div>';
+        html += '</div>';
+        html += '</div>';
+
+        resultsEl.innerHTML = html;
+        renderSimulationCharts({
+            yearLabels: result.year_labels,
+            percentiles: result.percentiles,
+            finalDist: result.final_year_distribution,
+        });
+    }
+
+    button.addEventListener('click', function(evt) {
+        if (running) {
+            evt.preventDefault();
+            aborted = true;
+        }
+    });
+
+    form.addEventListener('submit', function(evt) {
+        evt.preventDefault();
+        if (running) return;
+
+        var parsed = ClientSim.parseFormParams(form);
+        if (parsed.errors.length > 0) {
+            showError(parsed.errors.join('; '));
+            return;
+        }
+
+        var data = loadHistoricalData();
+        purgeSimulationCharts();
+        resultsEl.innerHTML = '';
+        progress.textContent = '0 of 10,000 runs completed';
+        progress.classList.remove('text-yellow-700', 'font-medium');
+        setRunning();
+
+        ClientSim.runBatched(parsed.params, data, {
+            nRuns: 10000,
+            batchSize: 500,
+            onProgress: function(k, total) {
+                progress.textContent = k.toLocaleString() + ' of ' + total.toLocaleString() + ' runs completed';
+            },
+            shouldAbort: function() { return aborted; },
+        }).then(function(out) {
+            if (out.kCompleted < out.nRuns) {
+                progress.textContent = 'Stopped at ' + out.kCompleted.toLocaleString() + ' / ' + out.nRuns.toLocaleString() + ' runs';
+                progress.classList.add('text-yellow-700', 'font-medium');
+            } else {
+                progress.textContent = 'Done — ' + out.nRuns.toLocaleString() + ' runs completed';
+            }
+            renderResults(out.result, parsed.params, out.kCompleted, out.nRuns);
+        }).catch(function(err) {
+            showError('Simulation error: ' + (err && err.message ? err.message : String(err)));
+        }).finally(function() {
+            setIdle();
+        });
+    });
+})();
+</script>
+{% endblock %}

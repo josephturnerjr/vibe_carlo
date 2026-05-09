@@ -81,15 +81,23 @@ def test_unknown_email(_fresh_db: tuple[Path, int]) -> None:
 
 def test_unauthenticated_redirect(_fresh_db: tuple[Path, int]) -> None:
     with TestClient(app) as c:
-        response = c.get("/", follow_redirects=False)
+        response = c.get("/snapshots", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/login"
+
+
+def test_unauthenticated_root_serves_public_page(_fresh_db: tuple[Path, int]) -> None:
+    """GET / for an unauthenticated visitor renders the public landing page,
+    not a redirect to /login."""
+    with TestClient(app) as c:
+        response = c.get("/", follow_redirects=False)
+        assert response.status_code == 200
+        assert 'id="historical-data"' in response.text
 
 
 def test_all_protected_routes_redirect(_fresh_db: tuple[Path, int]) -> None:
     with TestClient(app) as c:
         for method, path in [
-            ("GET", "/"),
             ("GET", "/snapshots"),
             ("GET", "/timeline"),
             ("POST", "/simulate"),
@@ -115,10 +123,10 @@ def test_logout_clears_session(_fresh_db: tuple[Path, int]) -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
 
-    # After logout, should redirect to login
+    # After logout, protected routes should redirect to login
     # Need fresh client without cookies
     with TestClient(app) as c:
-        response = c.get("/", follow_redirects=False)
+        response = c.get("/snapshots", follow_redirects=False)
         assert response.status_code == 303
 
 
@@ -137,14 +145,14 @@ def test_expired_session_rejected(_fresh_db: tuple[Path, int]) -> None:
     conn.close()
 
     with TestClient(app, cookies={"session_id": token}) as c:
-        response = c.get("/", follow_redirects=False)
+        response = c.get("/snapshots", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/login"
 
 
 def test_invalid_cookie_rejected(_fresh_db: tuple[Path, int]) -> None:
     with TestClient(app, cookies={"session_id": "garbage-token-xyz"}) as c:
-        response = c.get("/", follow_redirects=False)
+        response = c.get("/snapshots", follow_redirects=False)
         assert response.status_code == 303
         assert response.headers["location"] == "/login"
 

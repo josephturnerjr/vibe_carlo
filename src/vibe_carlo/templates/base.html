@@ -8,6 +8,8 @@
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script src="/static/js/distribution_picker.js"></script>
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/client_sim.js"></script>
     <link rel="stylesheet" href="/static/css/custom.css">
 </head>
 <body class="bg-gray-50 text-gray-900 min-h-screen">
@@ -34,6 +36,10 @@
                 <form method="post" action="/logout" class="inline">
                     <button type="submit" class="text-gray-600 hover:text-red-600">Logout</button>
                 </form>
+            </nav>
+            {% else %}
+            <nav class="flex items-center gap-4 text-sm font-medium">
+                <a href="/login" class="text-gray-600 hover:text-blue-600">Login</a>
             </nav>
             {% endif %}
         </div>

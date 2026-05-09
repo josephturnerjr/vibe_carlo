@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -83,14 +84,16 @@ def _format_accounting(value: float) -> str:
 templates.env.filters["accounting"] = _format_accounting
 
 historical_data: npt.NDArray[np.float64]
+historical_data_json: str = ""
 _db_path: Path | None = None
 _secure_cookies = os.environ.get("VIBE_CARLO_SECURE_COOKIES", "") == "1"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:
-    global historical_data  # noqa: PLW0603
+    global historical_data, historical_data_json  # noqa: PLW0603
     historical_data = load_historical_data()
+    historical_data_json = json.dumps(historical_data.tolist())
     init_db(_db_path)
     cleanup_expired_sessions(_db_path)
     yield
@@ -278,7 +281,11 @@ async def index(
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
-        return _auth_redirect(request)
+        return templates.TemplateResponse(
+            request,
+            "public_index.html",
+            {"historical_data_json": historical_data_json},
+        )
     user_id, user_email = user
 
     snapshot: SnapshotRow | None = None
