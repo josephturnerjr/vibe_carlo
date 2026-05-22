@@ -68,14 +68,14 @@ def test_create_and_get_snapshot(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert row["name"] == "Test"
-    assert row["snapshot_date"] == "2025-01-15"
-    assert row["cash_value"] == 100000
-    assert row["market_value"] == 500000
-    assert row["bond_value"] == 50000
-    assert row["earnings"] == 60000
-    assert row["years_to_simulate"] == 30
-    assert '"dist_type": "flat"' in str(row["spending_distribution"])
+    assert row.name == "Test"
+    assert row.snapshot_date == "2025-01-15"
+    assert row.cash_value == 100000
+    assert row.market_value == 500000
+    assert row.bond_value == 50000
+    assert row.earnings == 60000
+    assert row.years_to_simulate == 30
+    assert row.spending_distribution.dist_type == "flat"
 
 
 def test_create_snapshot_uniform_distribution(db: tuple[Path, int]) -> None:
@@ -88,9 +88,9 @@ def test_create_snapshot_uniform_distribution(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert '"dist_type": "uniform"' in str(row["spending_distribution"])
-    assert '"low": 30000' in str(row["spending_distribution"])
-    assert '"high": 60000' in str(row["spending_distribution"])
+    assert isinstance(row.spending_distribution, UniformDistribution)
+    assert row.spending_distribution.low == 30000
+    assert row.spending_distribution.high == 60000
 
 
 def test_create_snapshot_truncated_normal(db: tuple[Path, int]) -> None:
@@ -103,8 +103,8 @@ def test_create_snapshot_truncated_normal(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert '"dist_type": "truncated_normal"' in str(row["spending_distribution"])
-    assert '"mean": 50000' in str(row["spending_distribution"])
+    assert isinstance(row.spending_distribution, TruncatedNormalDistribution)
+    assert row.spending_distribution.mean == 50000
 
 
 def test_create_snapshot_with_name(db: tuple[Path, int]) -> None:
@@ -116,7 +116,7 @@ def test_create_snapshot_with_name(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert row["name"] == "My Retirement Plan"
+    assert row.name == "My Retirement Plan"
 
 
 def test_create_snapshot_without_name(db: tuple[Path, int]) -> None:
@@ -128,7 +128,7 @@ def test_create_snapshot_without_name(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert row["name"] is None
+    assert row.name is None
 
 
 def test_list_snapshots_ordered_by_date(db: tuple[Path, int]) -> None:
@@ -142,9 +142,9 @@ def test_list_snapshots_ordered_by_date(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert len(rows) == 3
-    assert rows[0]["name"] == "Mar"
-    assert rows[1]["name"] == "Feb"
-    assert rows[2]["name"] == "Jan"
+    assert rows[0].name == "Mar"
+    assert rows[1].name == "Feb"
+    assert rows[2].name == "Jan"
 
 
 def test_update_snapshot(db: tuple[Path, int]) -> None:
@@ -160,9 +160,9 @@ def test_update_snapshot(db: tuple[Path, int]) -> None:
 
     assert result is True
     assert row is not None
-    assert row["name"] == "Updated"
-    assert row["snapshot_date"] == "2025-06-01"
-    assert row["cash_value"] == 200000
+    assert row.name == "Updated"
+    assert row.snapshot_date == "2025-06-01"
+    assert row.cash_value == 200000
 
 
 def test_delete_snapshot(db: tuple[Path, int]) -> None:
@@ -216,7 +216,7 @@ def test_multiple_snapshots_same_date(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert len(rows) == 2
-    names = {r["name"] for r in rows}
+    names = {r.name for r in rows}
     assert names == {"A", "B"}
 
 
@@ -230,9 +230,9 @@ def test_snapshot_with_all_optional_fields_none(db: tuple[Path, int]) -> None:
     conn.close()
 
     assert row is not None
-    assert row["name"] is None
-    assert row["sample_years"] == 30  # defaults to years_to_simulate
-    assert row["filing_status"] is None
+    assert row.name is None
+    assert row.sample_years == 30  # defaults to years_to_simulate
+    assert row.filing_status is None
 
 
 def test_snapshot_preserves_filing_status(db: tuple[Path, int]) -> None:
@@ -243,5 +243,5 @@ def test_snapshot_preserves_filing_status(db: tuple[Path, int]) -> None:
         sid = create_snapshot(conn, user_id, None, "2025-01-01", params)
         row = get_snapshot(conn, sid, user_id)
         assert row is not None
-        assert row["filing_status"] == status.value
+        assert row.filing_status == status
     conn.close()

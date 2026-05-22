@@ -106,7 +106,7 @@ def test_user_b_cannot_update_user_a_snapshot(
     row = get_snapshot(conn, sid, uid_a)
     conn.close()
     assert row is not None
-    assert row["name"] == "Original"
+    assert row.name == "Original"
 
 
 def test_user_b_cannot_delete_user_a_snapshot(

@@ -2,8 +2,9 @@
 
 import json
 import sqlite3
+from typing import Any
 
-from vibe_carlo.schemas import SimulationInput, SpendingDistribution
+from vibe_carlo.schemas import SimulationInput, SnapshotRow, SpendingDistribution
 
 
 def serialize_distribution(dist: SpendingDistribution) -> str:
@@ -17,6 +18,13 @@ def deserialize_distribution(raw: str) -> SpendingDistribution:
 
     adapter: TypeAdapter[SpendingDistribution] = TypeAdapter(SpendingDistribution)
     return adapter.validate_python(json.loads(raw))
+
+
+def _snapshot_from_row(row: dict[str, Any]) -> SnapshotRow:
+    """Build a SnapshotRow from a DB row dict (deserializes spending_distribution)."""
+    data = dict(row)
+    data["spending_distribution"] = deserialize_distribution(str(data["spending_distribution"]))
+    return SnapshotRow.model_validate(data)
 
 
 def create_snapshot(
@@ -53,9 +61,7 @@ def create_snapshot(
     return cur.lastrowid  # type: ignore[return-value]
 
 
-def get_snapshot(
-    conn: sqlite3.Connection, snapshot_id: int, user_id: int
-) -> dict[str, object] | None:
+def get_snapshot(conn: sqlite3.Connection, snapshot_id: int, user_id: int) -> SnapshotRow | None:
     """Fetch a single snapshot by ID scoped to user, or None if not found."""
     cur = conn.execute(
         "SELECT * FROM snapshots WHERE id = ? AND user_id = ?", (snapshot_id, user_id)
@@ -63,16 +69,16 @@ def get_snapshot(
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return _snapshot_from_row(dict(row))
 
 
-def list_snapshots(conn: sqlite3.Connection, user_id: int) -> list[dict[str, object]]:
+def list_snapshots(conn: sqlite3.Connection, user_id: int) -> list[SnapshotRow]:
     """Return all snapshots for a user ordered by snapshot_date descending."""
     cur = conn.execute(
         "SELECT * FROM snapshots WHERE user_id = ? ORDER BY snapshot_date DESC, id DESC",
         (user_id,),
     )
-    return [dict(r) for r in cur.fetchall()]
+    return [_snapshot_from_row(dict(r)) for r in cur.fetchall()]
 
 
 def update_snapshot(

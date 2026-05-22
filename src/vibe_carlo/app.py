@@ -197,29 +197,6 @@ def _parse_form_params(
     )
 
 
-def _snapshot_to_row(raw: dict[str, object]) -> SnapshotRow:
-    """Convert a raw DB dict into a typed SnapshotRow."""
-    from vibe_carlo.snapshots import deserialize_distribution
-
-    dist = deserialize_distribution(str(raw["spending_distribution"]))
-    filing = FilingStatus(str(raw["filing_status"])) if raw.get("filing_status") else None
-    return SnapshotRow(
-        id=int(str(raw["id"])),
-        name=str(raw["name"]) if raw.get("name") else None,
-        snapshot_date=str(raw["snapshot_date"]),
-        cash_value=float(str(raw["cash_value"])),
-        market_value=float(str(raw["market_value"])),
-        bond_value=float(str(raw["bond_value"])),
-        earnings=float(str(raw["earnings"])),
-        spending_distribution=dist,
-        years_to_simulate=int(str(raw["years_to_simulate"])),
-        sample_years=int(str(raw["sample_years"])) if raw.get("sample_years") else None,
-        filing_status=filing,
-        created_at=str(raw["created_at"]) if raw.get("created_at") else None,
-        updated_at=str(raw["updated_at"]) if raw.get("updated_at") else None,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -294,12 +271,11 @@ async def index(
     if snapshot_id is not None:
         conn = get_connection(_db_path)
         try:
-            raw = get_snapshot(conn, snapshot_id, user_id)
+            snapshot = get_snapshot(conn, snapshot_id, user_id)
         finally:
             conn.close()
-        if raw is None:
+        if snapshot is None:
             return HTMLResponse(status_code=404, content="Snapshot not found")
-        snapshot = _snapshot_to_row(raw)
     return templates.TemplateResponse(
         request, "index.html", {"snapshot": snapshot, "user_email": user_email}
     )
@@ -375,12 +351,11 @@ async def snapshots_page(request: Request) -> Response:
 
     conn = get_connection(_db_path)
     try:
-        rows = list_snapshots(conn, user_id)
+        snapshots = list_snapshots(conn, user_id)
     finally:
         conn.close()
-    typed_rows = [_snapshot_to_row(r) for r in rows]
     return templates.TemplateResponse(
-        request, "snapshots.html", {"snapshots": typed_rows, "user_email": user_email}
+        request, "snapshots.html", {"snapshots": snapshots, "user_email": user_email}
     )
 
 
@@ -559,11 +534,11 @@ async def timeline_page(request: Request) -> Response:
     finally:
         conn.close()
     # list_snapshots returns DESC order; reverse for ASC
-    typed_rows = [_snapshot_to_row(r) for r in reversed(rows)]
+    snapshots_asc = list(reversed(rows))
 
     timeline = (
-        await asyncio.to_thread(compute_timeline, typed_rows, historical_data)
-        if typed_rows
+        await asyncio.to_thread(compute_timeline, snapshots_asc, historical_data)
+        if snapshots_asc
         else None
     )
     return templates.TemplateResponse(

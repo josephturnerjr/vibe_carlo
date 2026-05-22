@@ -99,7 +99,7 @@ def test_save_snapshot_from_form(client: TestClient, _db_path: tuple[Path, int])
     conn = get_connection(db_path)
     rows = list_snapshots(conn, user_id)
     conn.close()
-    assert any(r["name"] == "API Test" for r in rows)
+    assert any(r.name == "API Test" for r in rows)
 
 
 def test_load_snapshot_into_form(client: TestClient, _db_path: tuple[Path, int]) -> None:
@@ -147,8 +147,8 @@ def test_update_snapshot_via_api(client: TestClient, _db_path: tuple[Path, int])
     row = get_snapshot(conn, sid, user_id)
     conn.close()
     assert row is not None
-    assert row["name"] == "AfterUpdate"
-    assert row["cash_value"] == 200000.0
+    assert row.name == "AfterUpdate"
+    assert row.cash_value == 200000.0
 
 
 def test_delete_snapshot_via_api(client: TestClient, _db_path: tuple[Path, int]) -> None:
@@ -202,8 +202,8 @@ def test_snapshot_round_trip(client: TestClient, _db_path: tuple[Path, int]) -> 
     conn = get_connection(db_path)
     rows = list_snapshots(conn, user_id)
     conn.close()
-    row = next(r for r in rows if r["name"] == "RoundTrip")
-    sid = row["id"]
+    row = next(r for r in rows if r.name == "RoundTrip")
+    sid = row.id
 
     # Load
     response = client.get(f"/?snapshot_id={sid}")
@@ -221,8 +221,8 @@ def test_snapshot_round_trip(client: TestClient, _db_path: tuple[Path, int]) -> 
     updated = get_snapshot(conn, sid, user_id)
     conn.close()
     assert updated is not None
-    assert updated["name"] == "RoundTripUpdated"
-    assert updated["cash_value"] == 444000.0
+    assert updated.name == "RoundTripUpdated"
+    assert updated.cash_value == 444000.0
 
 
 # --- Edge cases / validation ---
@@ -296,7 +296,7 @@ def test_save_snapshot_each_distribution_type(
     conn = get_connection(db_path)
     rows = list_snapshots(conn, user_id)
     conn.close()
-    names = {r["name"] for r in rows}
+    names = {r.name for r in rows}
     assert {"FlatDist", "UniformDist", "NormalDist"} <= names
 
 
