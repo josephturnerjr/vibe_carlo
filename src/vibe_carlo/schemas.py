@@ -137,6 +137,19 @@ class TimelineData(BaseModel):
     fan_chart: FanChartData | None
 
 
+class ParamSetSpec(BaseModel):
+    """Input fields for create/update_parameter_set. No id/plan_id/order_position."""
+
+    name: str
+    duration: int | None = None
+    cash_value: float
+    market_value: float
+    bond_value: float
+    earnings: float = 0.0
+    spending_distribution: SpendingDistribution
+    filing_status: FilingStatus | None = None
+
+
 class PlanParameterSet(BaseModel):
     id: int
     plan_id: int
@@ -149,6 +162,8 @@ class PlanParameterSet(BaseModel):
     earnings: float = 0.0
     spending_distribution: SpendingDistribution
     filing_status: FilingStatus | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class PlanRow(BaseModel):
@@ -156,6 +171,8 @@ class PlanRow(BaseModel):
     user_id: int
     name: str
     parameter_set_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class SnapshotRow(BaseModel):

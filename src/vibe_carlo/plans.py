@@ -1,7 +1,9 @@
 """CRUD operations for plans and plan parameter sets."""
 
 import sqlite3
+from typing import Any
 
+from vibe_carlo.schemas import ParamSetSpec, PlanParameterSet, PlanRow
 from vibe_carlo.snapshots import deserialize_distribution, serialize_distribution
 
 
@@ -15,7 +17,7 @@ def create_plan(conn: sqlite3.Connection, user_id: int, name: str) -> int:
     return cur.lastrowid  # type: ignore[return-value]
 
 
-def get_plan(conn: sqlite3.Connection, plan_id: int, user_id: int) -> dict[str, object] | None:
+def get_plan(conn: sqlite3.Connection, plan_id: int, user_id: int) -> PlanRow | None:
     """Fetch a single plan by ID scoped to user, or None if not found."""
     cur = conn.execute(
         "SELECT * FROM plans WHERE id = ? AND user_id = ?",
@@ -24,10 +26,10 @@ def get_plan(conn: sqlite3.Connection, plan_id: int, user_id: int) -> dict[str, 
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return PlanRow.model_validate(dict(row))
 
 
-def list_plans(conn: sqlite3.Connection, user_id: int) -> list[dict[str, object]]:
+def list_plans(conn: sqlite3.Connection, user_id: int) -> list[PlanRow]:
     """Return all plans for a user with parameter set counts."""
     cur = conn.execute(
         """\
@@ -40,7 +42,7 @@ def list_plans(conn: sqlite3.Connection, user_id: int) -> list[dict[str, object]
         """,
         (user_id,),
     )
-    return [dict(r) for r in cur.fetchall()]
+    return [PlanRow.model_validate(dict(r)) for r in cur.fetchall()]
 
 
 def update_plan_name(conn: sqlite3.Connection, plan_id: int, user_id: int, name: str) -> bool:
@@ -80,19 +82,18 @@ def delete_plan(conn: sqlite3.Connection, plan_id: int, user_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _param_set_from_row(row: dict[str, Any]) -> PlanParameterSet:
+    """Build a PlanParameterSet from a DB row dict (deserializes spending_distribution)."""
+    data = dict(row)
+    data["spending_distribution"] = deserialize_distribution(str(data["spending_distribution"]))
+    return PlanParameterSet.model_validate(data)
+
+
 def create_parameter_set(
     conn: sqlite3.Connection,
     plan_id: int,
     user_id: int,
-    *,
-    name: str,
-    duration: int | None,
-    cash_value: float,
-    market_value: float,
-    bond_value: float,
-    earnings: float,
-    spending_distribution: object,
-    filing_status: str | None,
+    params: ParamSetSpec,
 ) -> int | None:
     """Add a parameter set to a plan. Returns ID or None if plan not owned."""
     # Verify plan ownership
@@ -120,15 +121,15 @@ def create_parameter_set(
         """,
         (
             plan_id,
-            name,
+            params.name,
             next_pos,
-            duration,
-            cash_value,
-            market_value,
-            bond_value,
-            earnings,
-            serialize_distribution(spending_distribution),  # type: ignore[arg-type]
-            filing_status,
+            params.duration,
+            params.cash_value,
+            params.market_value,
+            params.bond_value,
+            params.earnings,
+            serialize_distribution(params.spending_distribution),
+            params.filing_status.value if params.filing_status else None,
         ),
     )
     conn.commit()
@@ -137,7 +138,7 @@ def create_parameter_set(
 
 def get_parameter_set(
     conn: sqlite3.Connection, param_set_id: int, user_id: int
-) -> dict[str, object] | None:
+) -> PlanParameterSet | None:
     """Fetch a parameter set with ownership check via plan join."""
     cur = conn.execute(
         """\
@@ -150,12 +151,12 @@ def get_parameter_set(
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return _param_set_from_row(dict(row))
 
 
 def list_parameter_sets(
     conn: sqlite3.Connection, plan_id: int, user_id: int
-) -> list[dict[str, object]]:
+) -> list[PlanParameterSet]:
     """Return all parameter sets for a plan, ordered by position."""
     cur = conn.execute(
         """\
@@ -166,22 +167,14 @@ def list_parameter_sets(
         """,
         (plan_id, user_id),
     )
-    return [dict(r) for r in cur.fetchall()]
+    return [_param_set_from_row(dict(r)) for r in cur.fetchall()]
 
 
 def update_parameter_set(
     conn: sqlite3.Connection,
     param_set_id: int,
     user_id: int,
-    *,
-    name: str,
-    duration: int | None,
-    cash_value: float,
-    market_value: float,
-    bond_value: float,
-    earnings: float,
-    spending_distribution: object,
-    filing_status: str | None,
+    params: ParamSetSpec,
 ) -> bool:
     """Update a parameter set. Returns True if the row existed and was owned."""
     cur = conn.execute(
@@ -196,14 +189,14 @@ def update_parameter_set(
         )
         """,
         (
-            name,
-            duration,
-            cash_value,
-            market_value,
-            bond_value,
-            earnings,
-            serialize_distribution(spending_distribution),  # type: ignore[arg-type]
-            filing_status,
+            params.name,
+            params.duration,
+            params.cash_value,
+            params.market_value,
+            params.bond_value,
+            params.earnings,
+            serialize_distribution(params.spending_distribution),
+            params.filing_status.value if params.filing_status else None,
             param_set_id,
             user_id,
         ),
@@ -239,8 +232,8 @@ def move_parameter_set(
     if cur_set is None:
         return False
 
-    plan_id = cur_set["plan_id"]
-    cur_pos = cur_set["order_position"]
+    plan_id = cur_set.plan_id
+    cur_pos = cur_set.order_position
 
     # Find the adjacent set
     if direction == "up":
@@ -281,10 +274,3 @@ def move_parameter_set(
     )
     conn.commit()
     return True
-
-
-def param_set_to_typed(raw: dict[str, object]) -> dict[str, object]:
-    """Convert raw DB dict parameter set, deserializing spending_distribution."""
-    result = dict(raw)
-    result["spending_distribution"] = deserialize_distribution(str(raw["spending_distribution"]))
-    return result

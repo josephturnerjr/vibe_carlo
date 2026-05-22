@@ -32,7 +32,6 @@ from vibe_carlo.plans import (
     list_parameter_sets,
     list_plans,
     move_parameter_set,
-    param_set_to_typed,
     update_parameter_set,
     update_plan_name,
 )
@@ -40,6 +39,7 @@ from vibe_carlo.schemas import (
     AccountType,
     FilingStatus,
     FlatDistribution,
+    ParamSetSpec,
     PlanParameterSet,
     SimulationInput,
     SnapshotRow,
@@ -778,8 +778,8 @@ def _parse_param_set_form(
     spending_dist_mean: float,
     spending_dist_stddev: float,
     filing_status: str | None,
-) -> dict[str, object]:
-    """Parse form fields into kwargs for create/update_parameter_set."""
+) -> ParamSetSpec:
+    """Parse form fields into a ParamSetSpec for create/update_parameter_set."""
     spending_dist = _parse_distribution(
         spending_dist_type,
         spending_dist_value,
@@ -788,47 +788,16 @@ def _parse_param_set_form(
         spending_dist_mean,
         spending_dist_stddev,
     )
-    return {
-        "name": param_name,
-        "duration": duration,
-        "cash_value": cash_value,
-        "market_value": market_value,
-        "bond_value": bond_value,
-        "earnings": earnings,
-        "spending_distribution": spending_dist,
-        "filing_status": FilingStatus(filing_status).value if filing_status else None,
-    }
-
-
-def _plan_param_sets_typed(
-    conn: object,
-    plan_id: int,
-    user_id: int,
-) -> list[PlanParameterSet]:
-    """Load parameter sets and convert to typed PlanParameterSet models."""
-    raw_list = list_parameter_sets(conn, plan_id, user_id)  # type: ignore[arg-type]
-    result: list[PlanParameterSet] = []
-    for raw in raw_list:
-        typed = param_set_to_typed(raw)
-        fs = FilingStatus(str(typed["filing_status"])) if typed.get("filing_status") else None
-        result.append(
-            PlanParameterSet(
-                id=int(str(typed["id"])),
-                plan_id=int(str(typed["plan_id"])),
-                name=str(typed["name"]),
-                order_position=int(str(typed["order_position"])),
-                duration=int(str(typed["duration"]))
-                if typed.get("duration") is not None
-                else None,
-                cash_value=float(str(typed["cash_value"])),
-                market_value=float(str(typed["market_value"])),
-                bond_value=float(str(typed["bond_value"])),
-                earnings=float(str(typed["earnings"])),
-                spending_distribution=typed["spending_distribution"],  # type: ignore[arg-type]
-                filing_status=fs,
-            )
-        )
-    return result
+    return ParamSetSpec(
+        name=param_name,
+        duration=duration,
+        cash_value=cash_value,
+        market_value=market_value,
+        bond_value=bond_value,
+        earnings=earnings,
+        spending_distribution=spending_dist,
+        filing_status=FilingStatus(filing_status) if filing_status else None,
+    )
 
 
 @app.get("/plans", response_class=HTMLResponse)
@@ -888,7 +857,7 @@ async def plan_author_page(
         plan = get_plan(conn, plan_id, user_id)
         if plan is None:
             return HTMLResponse(status_code=404, content="Plan not found")
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
         edit_param: PlanParameterSet | None = None
         if edit_param_id is not None:
             edit_param = next((ps for ps in param_sets if ps.id == edit_param_id), None)
@@ -972,7 +941,7 @@ async def add_parameter_set_route(
     user_id, _user_email = user
 
     try:
-        kwargs = _parse_param_set_form(
+        spec = _parse_param_set_form(
             param_name,
             duration,
             cash_value,
@@ -995,11 +964,11 @@ async def add_parameter_set_route(
 
     conn = get_connection(_db_path)
     try:
-        ps_id = create_parameter_set(conn, plan_id, user_id, **kwargs)  # type: ignore[arg-type]
+        ps_id = create_parameter_set(conn, plan_id, user_id, spec)
         if ps_id is None:
             return HTMLResponse(status_code=404, content="Plan not found")
         plan = get_plan(conn, plan_id, user_id)
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
@@ -1035,7 +1004,7 @@ async def update_parameter_set_route(
     user_id, _user_email = user
 
     try:
-        kwargs = _parse_param_set_form(
+        spec = _parse_param_set_form(
             param_name,
             duration,
             cash_value,
@@ -1058,11 +1027,11 @@ async def update_parameter_set_route(
 
     conn = get_connection(_db_path)
     try:
-        found = update_parameter_set(conn, param_id, user_id, **kwargs)  # type: ignore[arg-type]
+        found = update_parameter_set(conn, param_id, user_id, spec)
         if not found:
             return HTMLResponse(status_code=404, content="Parameter set not found")
         plan = get_plan(conn, plan_id, user_id)
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
@@ -1086,7 +1055,7 @@ async def delete_parameter_set_route(request: Request, plan_id: int, param_id: i
         if not found:
             return HTMLResponse(status_code=404, content="Parameter set not found")
         plan = get_plan(conn, plan_id, user_id)
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
@@ -1113,7 +1082,7 @@ async def move_parameter_set_route(
     try:
         move_parameter_set(conn, param_id, user_id, direction)
         plan = get_plan(conn, plan_id, user_id)
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
@@ -1136,7 +1105,7 @@ async def plan_simulate_page(request: Request, plan_id: int) -> Response:
         plan = get_plan(conn, plan_id, user_id)
         if plan is None:
             return HTMLResponse(status_code=404, content="Plan not found")
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
@@ -1167,7 +1136,7 @@ async def run_plan_simulation_route(
         plan = get_plan(conn, plan_id, user_id)
         if plan is None:
             return HTMLResponse(status_code=404, content="Plan not found")
-        param_sets = _plan_param_sets_typed(conn, plan_id, user_id)
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
     finally:
         conn.close()
 
