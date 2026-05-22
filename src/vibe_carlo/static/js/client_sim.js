@@ -53,41 +53,6 @@
         head_of_household: 24150.0,
     };
 
-    function grossUpWithdrawal(desiredSpending, filingStatus) {
-        if (desiredSpending <= 0) return 0.0;
-        const stdDed = STANDARD_DEDUCTION[filingStatus];
-        const brackets = TAX_BRACKETS[filingStatus];
-        let afterTaxRemaining = desiredSpending;
-        let gross = 0.0;
-
-        if (stdDed > 0 && afterTaxRemaining > 0) {
-            const use = Math.min(stdDed, afterTaxRemaining);
-            gross += use;
-            afterTaxRemaining -= use;
-        }
-        if (afterTaxRemaining <= 0) return gross;
-
-        let prevBound = 0.0;
-        for (let i = 0; i < TAX_RATES.length; i++) {
-            if (afterTaxRemaining <= 0) break;
-            const rate = TAX_RATES[i];
-            const upper = brackets[i];
-            const bracketCapacity = upper - prevBound;
-            const afterTaxPerDollar = 1.0 - rate;
-            const afterTaxCapacity = bracketCapacity * afterTaxPerDollar;
-
-            if (afterTaxRemaining <= afterTaxCapacity) {
-                gross += afterTaxRemaining / afterTaxPerDollar;
-                afterTaxRemaining = 0.0;
-            } else {
-                gross += bracketCapacity;
-                afterTaxRemaining -= afterTaxCapacity;
-            }
-            prevBound = upper;
-        }
-        return gross;
-    }
-
     function grossUpWithdrawalArray(desiredSpending, filingStatus) {
         const stdDed = STANDARD_DEDUCTION[filingStatus];
         const brackets = TAX_BRACKETS[filingStatus];
@@ -494,7 +459,7 @@
         // PRNG
         makeRng,
         // Tax
-        grossUpWithdrawal, grossUpWithdrawalArray,
+        grossUpWithdrawalArray,
         // Sampling
         sampleFlat, sampleUniform, sampleTruncatedNormal, sampleSpending,
         // Bootstrap

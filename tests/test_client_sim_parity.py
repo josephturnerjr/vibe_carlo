@@ -24,7 +24,7 @@ from vibe_carlo.schemas import (
 )
 from vibe_carlo.simulation.engine import _build_bootstrap_indices, run_simulation
 from vibe_carlo.simulation.models import load_historical_data
-from vibe_carlo.simulation.tax import gross_up_withdrawal, gross_up_withdrawal_array
+from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
 CLIENT_SIM_PATH = (
     Path(__file__).resolve().parent.parent
@@ -77,30 +77,33 @@ def _run_js(node_bin: str, body: str) -> Any:
 
 
 @pytest.mark.parametrize("filing_status", list(FilingStatus))
-def test_js_gross_up_scalar_each_filing_status(node_bin: str, filing_status: FilingStatus) -> None:
-    cases = [0, 1, 100, 16_099, 16_100, 16_101, 50_000, 100_000, 250_000, 750_000, 5_000_000]
-    py_results = [gross_up_withdrawal(c, filing_status) for c in cases]
-    js_results = _run_js(
-        node_bin,
-        f"const cases = {json.dumps(cases)};\n"
-        f"const fs = {json.dumps(filing_status.value)};\n"
-        "emit(cases.map(c => ClientSim.grossUpWithdrawal(c, fs)));",
-    )
-    assert len(js_results) == len(py_results)
-    for js, py in zip(js_results, py_results):
-        assert abs(js - py) < 1e-6, f"JS {js} vs Py {py}"
-
-
-def test_js_gross_up_array_form(node_bin: str) -> None:
-    cases = [0.0, 50_000.0, 100_000.0, 250_000.0, 750_000.0]
-    py_results = gross_up_withdrawal_array(np.array(cases), FilingStatus.single).tolist()
+def test_js_gross_up_array_each_filing_status(node_bin: str, filing_status: FilingStatus) -> None:
+    cases = [
+        0.0,
+        1.0,
+        100.0,
+        16_099.0,
+        16_100.0,
+        16_101.0,
+        50_000.0,
+        100_000.0,
+        250_000.0,
+        750_000.0,
+        5_000_000.0,
+        10_000_000.0,
+    ]
+    py_results = gross_up_withdrawal_array(np.array(cases), filing_status).tolist()
     js_results = _run_js(
         node_bin,
         f"const arr = new Float64Array({json.dumps(cases)});\n"
-        "emit(Array.from(ClientSim.grossUpWithdrawalArray(arr, 'single')));",
+        f"const fs = {json.dumps(filing_status.value)};\n"
+        "emit(Array.from(ClientSim.grossUpWithdrawalArray(arr, fs)));",
     )
+    assert len(js_results) == len(py_results)
     for js, py in zip(js_results, py_results):
-        assert abs(js - py) < 1e-6
+        assert abs(js - py) < 1e-3, f"JS {js} vs Py {py}"
+    # Sanity: top-bracket value must require gross > spending
+    assert js_results[-1] > 10_000_000.0
 
 
 def test_js_gross_up_zero_and_negative_clamped(node_bin: str) -> None:
@@ -111,18 +114,6 @@ def test_js_gross_up_zero_and_negative_clamped(node_bin: str) -> None:
         "emit(Array.from(ClientSim.grossUpWithdrawalArray(arr, 'single')));",
     )
     assert js == [0.0, 0.0, 0.0]
-
-
-def test_js_gross_up_into_top_bracket(node_bin: str) -> None:
-    spending = 10_000_000.0
-    py = gross_up_withdrawal(spending, FilingStatus.single)
-    js = _run_js(
-        node_bin,
-        f"emit(ClientSim.grossUpWithdrawal({spending}, 'single'));",
-    )
-    assert abs(js - py) < 1e-3
-    # Sanity: top bracket must require gross > spending
-    assert js > spending
 
 
 # ---------------------------------------------------------------------------

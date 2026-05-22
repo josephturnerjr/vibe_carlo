@@ -55,88 +55,19 @@ STANDARD_DEDUCTION: dict[FilingStatus, float] = {
 }
 
 
-def compute_tax(taxable_income: float, filing_status: FilingStatus) -> float:
-    """Compute progressive federal income tax on taxable income (after deduction)."""
-    if taxable_income <= 0:
-        return 0.0
-
-    brackets = BRACKETS[filing_status]
-    tax = 0.0
-    prev_bound = 0.0
-
-    for rate, upper in zip(RATES, brackets):
-        if taxable_income <= prev_bound:
-            break
-        bracket_income = min(taxable_income, upper) - prev_bound
-        tax += bracket_income * rate
-        prev_bound = upper
-
-    return tax
-
-
-def gross_up_withdrawal(
-    desired_spending: float,
-    filing_status: FilingStatus,
-) -> float:
-    """Compute the gross (pre-tax) withdrawal needed to yield desired_spending after tax.
-
-    Assumes the withdrawal is the filer's only income (earnings are post-tax and
-    handled separately).  Finds W such that W - tax(W) = desired_spending.
-
-    Algorithm (exact, analytical, O(7)):
-    1. Fill the standard deduction at 0% rate, then walk brackets.
-    2. Each $1 gross at rate r yields $(1-r) after-tax.
-    """
-    if desired_spending <= 0:
-        return 0.0
-
-    std_ded = STANDARD_DEDUCTION[filing_status]
-    brackets = BRACKETS[filing_status]
-
-    after_tax_remaining = desired_spending
-    gross = 0.0
-
-    # Phase 1: consume standard deduction (tax-free)
-    if std_ded > 0 and after_tax_remaining > 0:
-        use = min(std_ded, after_tax_remaining)
-        gross += use
-        after_tax_remaining -= use
-
-    if after_tax_remaining <= 0:
-        return gross
-
-    # Phase 2: walk brackets
-    prev_bound = 0.0
-    for rate, upper in zip(RATES, brackets):
-        if after_tax_remaining <= 0:
-            break
-
-        bracket_capacity = upper - prev_bound
-
-        # Each $1 gross at this rate yields $(1-rate) after-tax
-        after_tax_per_dollar = 1.0 - rate
-        after_tax_capacity = bracket_capacity * after_tax_per_dollar
-
-        if after_tax_remaining <= after_tax_capacity:
-            gross += after_tax_remaining / after_tax_per_dollar
-            after_tax_remaining = 0.0
-        else:
-            gross += bracket_capacity
-            after_tax_remaining -= after_tax_capacity
-
-        prev_bound = upper
-
-    return gross
-
-
 def gross_up_withdrawal_array(
     desired_spending: npt.NDArray[np.float64],
     filing_status: FilingStatus,
 ) -> npt.NDArray[np.float64]:
-    """Vectorized gross-up: same algorithm as scalar version but over an ndarray.
+    """Vectorized gross-up: compute pre-tax withdrawal yielding desired_spending after tax.
 
-    Parameters match the scalar version but desired_spending is an array of any shape.
-    Returns an array of the same shape containing the gross (pre-tax) withdrawals.
+    Assumes the withdrawal is the filer's only income (earnings are post-tax and
+    handled separately). For each element W in the output, W - tax(W) equals the
+    corresponding desired_spending entry.
+
+    Algorithm (exact, analytical, O(7)):
+    1. Fill the standard deduction at 0% rate, then walk brackets.
+    2. Each $1 gross at rate r yields $(1-r) after-tax.
     """
     std_ded = STANDARD_DEDUCTION[filing_status]
     brackets = BRACKETS[filing_status]

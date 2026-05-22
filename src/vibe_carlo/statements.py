@@ -147,24 +147,6 @@ def create_account(
     return cur.lastrowid
 
 
-def get_account(
-    conn: sqlite3.Connection, account_id: int, user_id: int
-) -> StatementAccountRow | None:
-    """Fetch an account with ownership check via statement join."""
-    cur = conn.execute(
-        """\
-        SELECT sa.* FROM statement_accounts sa
-        JOIN statements s ON sa.statement_id = s.id
-        WHERE sa.id = ? AND s.user_id = ?
-        """,
-        (account_id, user_id),
-    )
-    row = cur.fetchone()
-    if row is None:
-        return None
-    return StatementAccountRow.model_validate(dict(row))
-
-
 def list_accounts(
     conn: sqlite3.Connection, statement_id: int, user_id: int
 ) -> list[StatementAccountRow]:

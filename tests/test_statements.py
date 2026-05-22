@@ -1,18 +1,18 @@
 """CRUD unit tests for asset statement operations."""
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from vibe_carlo.auth import create_user
 from vibe_carlo.db import get_connection, init_db
-from vibe_carlo.schemas import AccountType
+from vibe_carlo.schemas import AccountType, StatementAccountRow
 from vibe_carlo.statements import (
     create_account,
     create_statement,
     delete_account,
     delete_statement,
-    get_account,
     get_latest_statement,
     get_statement,
     list_accounts,
@@ -20,6 +20,13 @@ from vibe_carlo.statements import (
     update_account,
     update_statement_date,
 )
+
+
+def _account_by_id(
+    conn: sqlite3.Connection, stmt_id: int, user_id: int, acct_id: int
+) -> StatementAccountRow | None:
+    """Fetch a single account via list + filter (test helper)."""
+    return next((a for a in list_accounts(conn, stmt_id, user_id) if a.id == acct_id), None)
 
 
 @pytest.fixture()
@@ -125,7 +132,7 @@ def test_create_account(db: tuple[Path, int]) -> None:
         conn, stmt_id, user_id, name="Checking", account_type=AccountType.asset, value=10000.0
     )
     assert acct_id is not None
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert acct is not None
@@ -175,7 +182,7 @@ def test_update_account(db: tuple[Path, int]) -> None:
         account_type=AccountType.asset,
         value=25000,
     )
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert result is True
@@ -193,7 +200,7 @@ def test_delete_account(db: tuple[Path, int]) -> None:
     )
     assert acct_id is not None
     result = delete_account(conn, acct_id, user_id)
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert result is True
@@ -224,7 +231,7 @@ def test_create_account_asset_positive(db: tuple[Path, int]) -> None:
         conn, stmt_id, user_id, name="401k", account_type=AccountType.asset, value=5000
     )
     assert acct_id is not None
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert acct is not None
@@ -244,7 +251,7 @@ def test_create_account_liability_negative(db: tuple[Path, int]) -> None:
         value=5000,
     )
     assert acct_id is not None
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert acct is not None
@@ -268,7 +275,7 @@ def test_update_account_type_change_flips_sign(db: tuple[Path, int]) -> None:
         account_type=AccountType.liability,
         value=20000,
     )
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert acct is not None
@@ -296,7 +303,7 @@ def test_update_account_liability_to_asset(db: tuple[Path, int]) -> None:
         account_type=AccountType.asset,
         value=10000,
     )
-    acct = get_account(conn, acct_id, user_id)
+    acct = _account_by_id(conn, stmt_id, user_id, acct_id)
     conn.close()
 
     assert acct is not None
