@@ -11,6 +11,7 @@ import vibe_carlo.app as app_module
 from vibe_carlo.app import app
 from vibe_carlo.auth import create_session, create_user
 from vibe_carlo.db import get_connection, init_db
+from vibe_carlo.schemas import AccountType
 from vibe_carlo.statements import create_account, create_statement, get_statement, list_accounts
 
 
@@ -93,9 +94,16 @@ def test_create_statement_copy_from_latest(client: TestClient, _db_path: tuple[P
     # Create a statement with accounts that will be the latest by date
     conn = get_connection(db_path)
     src_id = create_statement(conn, user_id, "2099-12-31")
-    create_account(conn, src_id, user_id, name="CopyHouse", account_type="asset", value=500000)
     create_account(
-        conn, src_id, user_id, name="CopyMortgage", account_type="liability", value=300000
+        conn, src_id, user_id, name="CopyHouse", account_type=AccountType.asset, value=500000
+    )
+    create_account(
+        conn,
+        src_id,
+        user_id,
+        name="CopyMortgage",
+        account_type=AccountType.liability,
+        value=300000,
     )
     conn.close()
 
@@ -114,7 +122,7 @@ def test_create_statement_copy_from_latest(client: TestClient, _db_path: tuple[P
     conn.close()
 
     assert len(accounts) == 2
-    names = {str(a["name"]) for a in accounts}
+    names = {a.name for a in accounts}
     assert "CopyHouse" in names
     assert "CopyMortgage" in names
 
@@ -159,7 +167,7 @@ def test_save_statement_update_date(client: TestClient, _db_path: tuple[Path, in
     stmt = get_statement(conn, stmt_id, user_id)
     conn.close()
     assert stmt is not None
-    assert stmt["statement_date"] == "2025-08-01"
+    assert stmt.statement_date == "2025-08-01"
 
 
 def test_save_statement_add_accounts(client: TestClient, _db_path: tuple[Path, int]) -> None:
@@ -192,7 +200,7 @@ def test_save_statement_update_accounts(client: TestClient, _db_path: tuple[Path
     conn = get_connection(db_path)
     stmt_id = create_statement(conn, user_id, "2025-06-15")
     acct_id = create_account(
-        conn, stmt_id, user_id, name="Checking", account_type="asset", value=5000
+        conn, stmt_id, user_id, name="Checking", account_type=AccountType.asset, value=5000
     )
     conn.close()
 
@@ -211,8 +219,8 @@ def test_save_statement_update_accounts(client: TestClient, _db_path: tuple[Path
     accounts = list_accounts(conn, stmt_id, user_id)
     conn.close()
     assert len(accounts) == 1
-    assert accounts[0]["name"] == "Updated Checking"
-    assert accounts[0]["value"] == 15000.0
+    assert accounts[0].name == "Updated Checking"
+    assert accounts[0].value == 15000.0
 
 
 def test_save_statement_remove_accounts(client: TestClient, _db_path: tuple[Path, int]) -> None:
@@ -220,10 +228,14 @@ def test_save_statement_remove_accounts(client: TestClient, _db_path: tuple[Path
 
     conn = get_connection(db_path)
     stmt_id = create_statement(conn, user_id, "2025-06-15")
-    create_account(conn, stmt_id, user_id, name="ToKeep", account_type="asset", value=5000)
-    create_account(conn, stmt_id, user_id, name="ToRemove", account_type="asset", value=3000)
+    create_account(
+        conn, stmt_id, user_id, name="ToKeep", account_type=AccountType.asset, value=5000
+    )
+    create_account(
+        conn, stmt_id, user_id, name="ToRemove", account_type=AccountType.asset, value=3000
+    )
     accounts_before = list_accounts(conn, stmt_id, user_id)
-    keep_id = str(accounts_before[0]["id"])
+    keep_id = str(accounts_before[0].id)
     conn.close()
 
     # Only send the first account
@@ -242,7 +254,7 @@ def test_save_statement_remove_accounts(client: TestClient, _db_path: tuple[Path
     accounts = list_accounts(conn, stmt_id, user_id)
     conn.close()
     assert len(accounts) == 1
-    assert accounts[0]["name"] == "ToKeep"
+    assert accounts[0].name == "ToKeep"
 
 
 def test_save_statement_full_reconciliation(
@@ -253,9 +265,11 @@ def test_save_statement_full_reconciliation(
     conn = get_connection(db_path)
     stmt_id = create_statement(conn, user_id, "2025-06-15")
     acct1 = create_account(
-        conn, stmt_id, user_id, name="Update Me", account_type="asset", value=1000
+        conn, stmt_id, user_id, name="Update Me", account_type=AccountType.asset, value=1000
     )
-    create_account(conn, stmt_id, user_id, name="Delete Me", account_type="asset", value=2000)
+    create_account(
+        conn, stmt_id, user_id, name="Delete Me", account_type=AccountType.asset, value=2000
+    )
     conn.close()
 
     # Update acct1, delete acct2, add new acct3
@@ -275,7 +289,7 @@ def test_save_statement_full_reconciliation(
     conn.close()
 
     assert len(accounts) == 2
-    names = {str(a["name"]) for a in accounts}
+    names = {a.name for a in accounts}
     assert "Updated" in names
     assert "Brand New" in names
     assert "Delete Me" not in names
@@ -313,7 +327,9 @@ def test_net_worth_accounting_format(client: TestClient, _db_path: tuple[Path, i
 
     conn = get_connection(db_path)
     stmt_id = create_statement(conn, user_id, "2025-12-31")
-    create_account(conn, stmt_id, user_id, name="Savings", account_type="asset", value=1234567)
+    create_account(
+        conn, stmt_id, user_id, name="Savings", account_type=AccountType.asset, value=1234567
+    )
     conn.close()
 
     response = client.get("/statements")
@@ -327,7 +343,9 @@ def test_edit_page_shows_accounts(client: TestClient, _db_path: tuple[Path, int]
 
     conn = get_connection(db_path)
     stmt_id = create_statement(conn, user_id, "2025-06-15")
-    create_account(conn, stmt_id, user_id, name="My401k", account_type="asset", value=250000)
+    create_account(
+        conn, stmt_id, user_id, name="My401k", account_type=AccountType.asset, value=250000
+    )
     conn.close()
 
     response = client.get(f"/statements/{stmt_id}")

@@ -37,12 +37,14 @@ from vibe_carlo.plans import (
     update_plan_name,
 )
 from vibe_carlo.schemas import (
+    AccountType,
     FilingStatus,
     FlatDistribution,
     PlanParameterSet,
     SimulationInput,
     SnapshotRow,
     SpendingDistribution,
+    StatementAccountRow,
     TruncatedNormalDistribution,
     UniformDistribution,
 )
@@ -616,11 +618,11 @@ async def create_statement_route(
     conn = get_connection(_db_path)
     try:
         # Find latest before creating the new one
-        latest_accounts: list[dict[str, object]] = []
+        latest_accounts: list[StatementAccountRow] = []
         if copy_from_latest == "true":
             latest = get_latest_statement(conn, user_id)
             if latest is not None:
-                latest_accounts = list_accounts(conn, int(str(latest["id"])), user_id)
+                latest_accounts = list_accounts(conn, latest.id, user_id)
 
         stmt_id = create_statement(conn, user_id, statement_date)
 
@@ -629,9 +631,9 @@ async def create_statement_route(
                 conn,
                 stmt_id,
                 user_id,
-                name=str(acct["name"]),
-                account_type=str(acct["account_type"]),
-                value=abs(float(str(acct["value"]))),
+                name=acct.name,
+                account_type=acct.account_type,
+                value=abs(acct.value),
             )
     finally:
         conn.close()
@@ -655,8 +657,8 @@ async def statement_edit_page(request: Request, statement_id: int) -> Response:
     finally:
         conn.close()
 
-    assets = [a for a in accounts if a["account_type"] == "asset"]
-    liabilities = [a for a in accounts if a["account_type"] == "liability"]
+    assets = [a for a in accounts if a.account_type == AccountType.asset]
+    liabilities = [a for a in accounts if a.account_type == AccountType.liability]
 
     return templates.TemplateResponse(
         request,
@@ -700,13 +702,14 @@ async def save_statement_route(request: Request, statement_id: int) -> Response:
 
         # Get existing account IDs to detect deletions
         existing_accounts = list_accounts(conn, statement_id, user_id)
-        existing_ids = {int(str(a["id"])) for a in existing_accounts}
+        existing_ids = {a.id for a in existing_accounts}
         form_ids: set[int] = set()
 
         for i in range(len(account_names)):
             acct_id_str = str(account_ids[i]) if i < len(account_ids) else ""
             acct_name = str(account_names[i])
-            acct_type = str(account_types[i]) if i < len(account_types) else "asset"
+            acct_type_str = str(account_types[i]) if i < len(account_types) else "asset"
+            acct_type = AccountType(acct_type_str)
             acct_value = float(str(account_values[i])) if i < len(account_values) else 0.0
 
             if acct_id_str:

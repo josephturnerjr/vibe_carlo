@@ -189,6 +189,8 @@ class StatementRow(BaseModel):
     user_id: int
     statement_date: str
     net_worth: float = 0.0
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class StatementAccountRow(BaseModel):
@@ -198,3 +200,5 @@ class StatementAccountRow(BaseModel):
     account_type: AccountType
     value: float
     order_position: int
+    created_at: str | None = None
+    updated_at: str | None = None

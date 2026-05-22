@@ -2,6 +2,8 @@
 
 import sqlite3
 
+from vibe_carlo.schemas import AccountType, StatementAccountRow, StatementRow
+
 # ---------------------------------------------------------------------------
 # Statement operations
 # ---------------------------------------------------------------------------
@@ -19,7 +21,7 @@ def create_statement(conn: sqlite3.Connection, user_id: int, statement_date: str
 
 def get_statement(
     conn: sqlite3.Connection, statement_id: int, user_id: int
-) -> dict[str, object] | None:
+) -> StatementRow | None:
     """Fetch a single statement by ID scoped to user, or None if not found."""
     cur = conn.execute(
         "SELECT * FROM statements WHERE id = ? AND user_id = ?",
@@ -28,10 +30,10 @@ def get_statement(
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return StatementRow.model_validate(dict(row))
 
 
-def list_statements(conn: sqlite3.Connection, user_id: int) -> list[dict[str, object]]:
+def list_statements(conn: sqlite3.Connection, user_id: int) -> list[StatementRow]:
     """Return all statements for a user with net_worth via LEFT JOIN + SUM."""
     cur = conn.execute(
         """\
@@ -44,7 +46,7 @@ def list_statements(conn: sqlite3.Connection, user_id: int) -> list[dict[str, ob
         """,
         (user_id,),
     )
-    return [dict(r) for r in cur.fetchall()]
+    return [StatementRow.model_validate(dict(r)) for r in cur.fetchall()]
 
 
 def update_statement_date(
@@ -79,7 +81,7 @@ def delete_statement(conn: sqlite3.Connection, statement_id: int, user_id: int) 
     return True
 
 
-def get_latest_statement(conn: sqlite3.Connection, user_id: int) -> dict[str, object] | None:
+def get_latest_statement(conn: sqlite3.Connection, user_id: int) -> StatementRow | None:
     """Return the most recent statement by date, or None."""
     cur = conn.execute(
         """\
@@ -93,7 +95,7 @@ def get_latest_statement(conn: sqlite3.Connection, user_id: int) -> dict[str, ob
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return StatementRow.model_validate(dict(row))
 
 
 # ---------------------------------------------------------------------------
@@ -101,9 +103,9 @@ def get_latest_statement(conn: sqlite3.Connection, user_id: int) -> dict[str, ob
 # ---------------------------------------------------------------------------
 
 
-def _enforce_sign(account_type: str, value: float) -> float:
+def _enforce_sign(account_type: AccountType, value: float) -> float:
     """Enforce value sign: positive for assets, negative for liabilities."""
-    if account_type == "asset":
+    if account_type == AccountType.asset:
         return abs(value)
     return -abs(value)
 
@@ -114,7 +116,7 @@ def create_account(
     user_id: int,
     *,
     name: str,
-    account_type: str,
+    account_type: AccountType,
     value: float,
 ) -> int | None:
     """Add an account to a statement. Returns ID or None if statement not owned."""
@@ -139,7 +141,7 @@ def create_account(
             (statement_id, name, account_type, value, order_position)
         VALUES (?, ?, ?, ?, ?)
         """,
-        (statement_id, name, account_type, stored_value, next_pos),
+        (statement_id, name, account_type.value, stored_value, next_pos),
     )
     conn.commit()
     return cur.lastrowid
@@ -147,7 +149,7 @@ def create_account(
 
 def get_account(
     conn: sqlite3.Connection, account_id: int, user_id: int
-) -> dict[str, object] | None:
+) -> StatementAccountRow | None:
     """Fetch an account with ownership check via statement join."""
     cur = conn.execute(
         """\
@@ -160,12 +162,12 @@ def get_account(
     row = cur.fetchone()
     if row is None:
         return None
-    return dict(row)
+    return StatementAccountRow.model_validate(dict(row))
 
 
 def list_accounts(
     conn: sqlite3.Connection, statement_id: int, user_id: int
-) -> list[dict[str, object]]:
+) -> list[StatementAccountRow]:
     """Return all accounts for a statement, ordered by type (asset first) then position."""
     cur = conn.execute(
         """\
@@ -178,7 +180,7 @@ def list_accounts(
         """,
         (statement_id, user_id),
     )
-    return [dict(r) for r in cur.fetchall()]
+    return [StatementAccountRow.model_validate(dict(r)) for r in cur.fetchall()]
 
 
 def update_account(
@@ -187,7 +189,7 @@ def update_account(
     user_id: int,
     *,
     name: str,
-    account_type: str,
+    account_type: AccountType,
     value: float,
 ) -> bool:
     """Update an account. Returns True if the row existed and was owned."""
@@ -201,7 +203,7 @@ def update_account(
             SELECT id FROM statements WHERE user_id = ?
         )
         """,
-        (name, account_type, stored_value, account_id, user_id),
+        (name, account_type.value, stored_value, account_id, user_id),
     )
     conn.commit()
     return cur.rowcount > 0
