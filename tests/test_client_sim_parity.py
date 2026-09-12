@@ -31,6 +31,7 @@ from vibe_carlo.schemas import (
 )
 from vibe_carlo.simulation.engine import _build_bootstrap_indices, run_simulation
 from vibe_carlo.simulation.models import load_historical_data
+from vibe_carlo.simulation.solver import SUCCESS_LEVELS
 
 CLIENT_SIM_PATH = (
     Path(__file__).resolve().parent.parent
@@ -728,18 +729,8 @@ def _solver_compare(
     )
 
     assert js_out["method"] == py_method
-    assert [row["success_pct"] for row in js_out["rows"]] == [
-        95,
-        90,
-        85,
-        80,
-        75,
-        70,
-        65,
-        60,
-        55,
-        50,
-    ]
+    # Also pins the JS SUCCESS_LEVELS to the Python one; the two must not drift.
+    assert [row["success_pct"] for row in js_out["rows"]] == list(SUCCESS_LEVELS)
     assert abs(js_out["current_mean_spending"] - float(np.mean(spending))) < 1e-6
 
     for row, py_m in zip(js_out["rows"], py_multipliers):
@@ -902,18 +893,7 @@ def test_js_run_batched_produces_a_safe_spending_table(node_bin: str) -> None:
         data={"params": js_params, "historical": historical.flatten().tolist()},
     )
 
-    assert [row["success_pct"] for row in table["rows"]] == [
-        95,
-        90,
-        85,
-        80,
-        75,
-        70,
-        65,
-        60,
-        55,
-        50,
-    ]
+    assert [row["success_pct"] for row in table["rows"]] == list(SUCCESS_LEVELS)
     assert table["method"] == "closed_form"
     assert table["solve_years"] == 30
     assert table["current_mean_spending"] == pytest.approx(40_000)

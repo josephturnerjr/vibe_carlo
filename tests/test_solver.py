@@ -130,10 +130,18 @@ def test_terminal_target_round_trips(historical: np.ndarray) -> None:
     )
 
     assert table.target_net_worth == target
+    # A demanding target can put the worst sampled path out of reach at any
+    # spending level, which is a legitimate None — but only at the top of the
+    # table, since a lower success rate is never harder to hit.
+    checked = 0
     for row in table.rows:
-        assert row.multiplier is not None
+        if row.multiplier is None:
+            assert row.success_pct == 100, f"{row.success_pct}% unexpectedly unreachable"
+            continue
         got = engine_rate(params, historical, row.multiplier, target=target)
         assert abs(got - row.success_pct) < TOLERANCE_PP
+        checked += 1
+    assert checked >= len(SUCCESS_LEVELS) - 1
 
 
 def test_terminal_target_lowers_safe_spending(historical: np.ndarray) -> None:
@@ -143,10 +151,16 @@ def test_terminal_target_lowers_safe_spending(historical: np.ndarray) -> None:
         params, historical, target_net_worth=500_000.0, n_runs=N_RUNS, seed=SEED
     )
 
+    compared = 0
     for lhs, rhs in zip(without.rows, with_target.rows):
         assert lhs.annual_spending is not None
-        assert rhs.annual_spending is not None
+        if rhs.annual_spending is None:
+            # Requiring a balance at the end made this row unreachable, which is
+            # the strongest form of "lower".
+            continue
         assert rhs.annual_spending < lhs.annual_spending
+        compared += 1
+    assert compared >= len(SUCCESS_LEVELS) - 1
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +228,35 @@ def test_table_covers_every_success_level(historical: np.ndarray) -> None:
 def test_success_levels_are_five_percent_increments() -> None:
     steps = {a - b for a, b in zip(SUCCESS_LEVELS, SUCCESS_LEVELS[1:])}
     assert steps == {5}
+
+
+def test_table_starts_at_one_hundred_percent() -> None:
+    assert SUCCESS_LEVELS[0] == 100
+
+
+def test_hundred_percent_row_never_exceeds_ninety_five(historical: np.ndarray) -> None:
+    """The worst sampled path cannot support more than the 5th-percentile one."""
+    for params in (
+        make_input(FlatDistribution(value=40_000)),
+        make_input(UniformDistribution(low=30_000, high=50_000), tax=0.2),
+        make_input(UniformDistribution(low=30_000, high=90_000), earnings=60_000.0, tax=0.25),
+    ):
+        table = solve_safe_spending(params, historical, n_runs=N_RUNS, seed=SEED)
+        rows = {row.success_pct: row.annual_spending for row in table.rows}
+        assert rows[100] is not None
+        assert rows[95] is not None
+        assert rows[100] <= rows[95]
+
+
+def test_hundred_percent_row_round_trips(historical: np.ndarray) -> None:
+    """Spending the 100% figure must leave every simulated run solvent."""
+    params = make_input(FlatDistribution(value=40_000))
+    table = solve_safe_spending(params, historical, n_runs=N_RUNS, seed=SEED)
+
+    row = next(r for r in table.rows if r.success_pct == 100)
+    assert row.multiplier is not None
+    got = engine_rate(params, historical, row.multiplier)
+    assert abs(got - 100) < TOLERANCE_PP
 
 
 def test_higher_success_demands_lower_spending(historical: np.ndarray) -> None:

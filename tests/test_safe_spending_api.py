@@ -55,29 +55,55 @@ def _dollar_rows(html: str) -> list[int]:
     return [int(v.replace(",", "")) for v in re.findall(r"\$([\d,]+)\s*</td>", html)]
 
 
+def _rows_by_level(html: str) -> dict[int, int | None]:
+    """Map each success level to its dollar figure, or None for "not reachable"."""
+    rows: dict[int, int | None] = {}
+    for level, cell in re.findall(r">\s*(\d+)%\s*</td>\s*(<td.*?</td>)", html, re.DOTALL):
+        money = re.search(r"\$([\d,]+)", cell)
+        rows[int(level)] = int(money.group(1).replace(",", "")) if money else None
+    return rows
+
+
 def test_safe_spending_returns_table(client: TestClient) -> None:
     resp = client.post("/safe-spending", data=BASE_FORM)
     assert resp.status_code == 200
     body = resp.text
-    for level in (95, 90, 85, 80, 75, 70, 65, 60, 55, 50):
+    for level in (100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50):
         assert f">\n                        {level}%" in body
-    # 99% is deliberately not offered as a row (it appears only in the caveat text).
+    # 99% is not a row (99 appears only inside the 10,000-runs caveat text).
     assert ">\n                        99%" not in body
 
 
 def test_safe_spending_rows_increase_as_success_falls(client: TestClient) -> None:
     resp = client.post("/safe-spending", data=BASE_FORM)
     values = _dollar_rows(resp.text)
-    assert len(values) == 10
+    assert len(values) == 11
     assert values == sorted(values)
 
 
 def test_safe_spending_target_lowers_the_numbers(client: TestClient) -> None:
-    without = _dollar_rows(client.post("/safe-spending", data=BASE_FORM).text)
-    with_target = _dollar_rows(
+    without = _rows_by_level(client.post("/safe-spending", data=BASE_FORM).text)
+    with_target = _rows_by_level(
         client.post("/safe-spending", data={**BASE_FORM, "target_net_worth": "500000"}).text
     )
-    assert all(a < b for a, b in zip(with_target, without))
+    # Compare by success level, not by position: a demanding target can render
+    # the 100% row "not reachable", which would shift a positional pairing.
+    compared = 0
+    for level, base in without.items():
+        assert base is not None
+        targeted = with_target[level]
+        if targeted is None:
+            continue
+        assert targeted < base, f"{level}%: {targeted} not below {base}"
+        compared += 1
+    assert compared >= 10
+
+
+def test_safe_spending_hundred_percent_row_is_lowest(client: TestClient) -> None:
+    rows = _rows_by_level(client.post("/safe-spending", data=BASE_FORM).text)
+    assert rows[100] is not None
+    assert rows[95] is not None
+    assert rows[100] <= rows[95]
 
 
 def test_safe_spending_rejects_zero_spending(client: TestClient) -> None:
@@ -142,7 +168,7 @@ def test_plan_safe_spending_solves_final_phase(client: TestClient) -> None:
     # 35-year horizon less the 10 committed working years.
     assert "25-year phase" in body
     values = _dollar_rows(body)
-    assert len(values) == 10
+    assert len(values) == 11
     assert values == sorted(values)
 
 

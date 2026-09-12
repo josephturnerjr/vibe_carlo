@@ -269,7 +269,9 @@
     // Python side; plans (which solve only their final phase) are server-side.
     // -----------------------------------------------------------------------
 
-    const SUCCESS_LEVELS = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50];
+    // Must stay identical to solver.SUCCESS_LEVELS. The 100% row is the
+    // q=0.0 quantile — the single worst sampled path, so the noisiest row.
+    const SUCCESS_LEVELS = [100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50];
 
     const REFINE_ITERATIONS = 60;
     const BRACKET_EXPANSIONS = 20;

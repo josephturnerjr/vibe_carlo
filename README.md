@@ -70,9 +70,12 @@ concluding retirement phase absorbs the question. The authored spending
 distribution is scaled as a whole rather than replaced by a flat number, so its
 shape is preserved and the figure reported is the resulting mean annual spend.
 
-Rows stop at 95% deliberately: the historical dataset is ~100 years long, so the
-far tail is limited by how much history exists rather than by the number of
-Monte Carlo runs, and a 99% row would imply a precision the model does not have.
+Rows run from 100% down to 50% in 5% increments. The 100% row is the `q=0.0`
+quantile — the single worst sampled path — so it means "survived every future we
+simulated", not "cannot fail". It is by construction the noisiest row in the
+table and moves from run to run, and the ~100-year historical dataset limits the
+far tail regardless of how many Monte Carlo runs are used. The 90–95% rows are
+the dependable end.
 
 The solver is transliterated into `static/js/client_sim.js` as well, so the
 public landing page builds the same table client-side. Because the critical

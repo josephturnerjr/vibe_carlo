@@ -177,7 +177,7 @@
         html += '<p>Current mean spending is ' + formatDollars(table.current_mean_spending) +
             '/yr; the table scales your spending distribution up or down as a whole, so its shape is preserved and the figure shown is the resulting mean.</p>';
         html += '<p><strong>What this assumes:</strong> you set spending once and never adjust it, for the whole period, regardless of how markets behave. Nobody actually does that — a real retiree who trims spending after a bad year does better than these numbers suggest. Treat a row as a reference point, not a budget.</p>';
-        html += '<p>Rows stop at 95% on purpose. The historical dataset is about 100 years long, so the far tail is limited by how much history exists, not by the number of simulations. A 99% row would look more precise than it really is.</p>';
+        html += '<p><strong>About the 100% row:</strong> it means "survived every future we simulated", not "cannot fail". It is set by the single worst path out of the runs, so it is the noisiest row here — run the same numbers again and it will move more than any other row. The historical dataset is only about 100 years long, so the far tail is limited by how much history exists, not by the number of simulations. Read the 90–95% rows as the dependable end of the table.</p>';
         html += '</div></div>';
         return html;
     }

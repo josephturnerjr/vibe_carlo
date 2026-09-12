@@ -34,11 +34,14 @@ from vibe_carlo.simulation.engine import _build_bootstrap_indices
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
 from vibe_carlo.simulation.plan_engine import compute_phase_durations
 
-# Success rates shown in the table, in 5% increments. Deliberately stops at 95%:
-# the historical dataset is only ~100 rows, so the far tail is limited by the
-# data rather than by the number of Monte Carlo runs, and a 99% row would imply
-# a precision the model does not have.
-SUCCESS_LEVELS: tuple[int, ...] = (95, 90, 85, 80, 75, 70, 65, 60, 55, 50)
+# Success rates shown in the table, in 5% increments.
+#
+# The 100% row is the q=0.0 quantile — the single worst sampled path — so it is
+# the noisiest row in the table and moves from run to run. It means "survived
+# every future we simulated", not "cannot fail": the historical dataset is only
+# ~100 rows, so the far tail is limited by how much history exists rather than
+# by the number of Monte Carlo runs.
+SUCCESS_LEVELS: tuple[int, ...] = (100, 95, 90, 85, 80, 75, 70, 65, 60, 55, 50)
 
 # Bisection settings for the refinement path.
 _REFINE_ITERATIONS = 60
