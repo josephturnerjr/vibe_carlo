@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# A drop-in stand-in for the `node` binary, backed by a Docker container.
+#
+# The JS-parity tests shell out to `node` with an absolute `require()` path into
+# this repo. Mounting the repo at the *same* absolute path inside the container
+# means those paths resolve unchanged, so the tests need no knowledge that Node
+# is running in Docker at all.
+#
+# Point the tests at this script with VIBE_CARLO_NODE, or just run
+# scripts/run-js-tests.sh, which does it for you.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+IMAGE="${VIBE_CARLO_NODE_IMAGE:-node:22-alpine}"
+
+exec docker run --rm --interactive \
+    --network none \
+    --volume "$REPO_ROOT:$REPO_ROOT:ro" \
+    --workdir "$REPO_ROOT" \
+    "$IMAGE" node "$@"

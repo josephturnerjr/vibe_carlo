@@ -1,13 +1,21 @@
 """Parity tests: invoke the JS client_sim module via Node and compare to Python.
 
-These tests `skip` when `node` is not on PATH, so the suite stays green for
-contributors who haven't installed Node. README documents Node ≥ 18 as the
-optional dev dep that unlocks them.
+Node is located in this order:
+
+1. ``$VIBE_CARLO_NODE`` — a path to anything that behaves like the ``node``
+   binary. ``scripts/run-js-tests.sh`` sets this to ``scripts/node-docker``,
+   which runs Node in a container, so these tests are runnable on a machine
+   with no local Node install.
+2. ``node`` on ``PATH``.
+
+If neither is available the tests skip, so the suite stays green for
+contributors who have set up neither Node nor Docker.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -36,9 +44,15 @@ CLIENT_SIM_PATH = (
 
 @pytest.fixture(scope="module")
 def node_bin() -> str:
+    override = os.environ.get("VIBE_CARLO_NODE")
+    if override:
+        return override
     path = shutil.which("node")
     if path is None:
-        pytest.skip("Node.js not installed; skipping JS-parity tests")
+        pytest.skip(
+            "No Node.js: install Node >= 18, or run scripts/run-js-tests.sh "
+            "to run these against a Node container"
+        )
     assert path is not None
     return path
 

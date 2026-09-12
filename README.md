@@ -91,4 +91,19 @@ uv run pytest tests/ -v
 
 The JS-parity tests in `tests/test_client_sim_parity.py` invoke the client-side
 simulation engine via `node` and compare the output to the Python reference. They
-skip when Node ≥ 18 is not on `PATH`; install Node for full coverage.
+skip when Node is unavailable, so a plain `uv run pytest` stays green without it.
+
+To run them with a local Node ≥ 18, just have `node` on `PATH`. To run them
+without installing Node at all, use Docker:
+
+```bash
+scripts/run-js-tests.sh            # the parity suite
+scripts/run-js-tests.sh -k sample  # extra args are passed to pytest
+```
+
+That script pulls `node:22-alpine` once, then points the tests at
+`scripts/node-docker` — a stand-in for the `node` binary that runs Node in a
+container with the repo bind-mounted at the same absolute path, so the tests'
+`require()` paths resolve unchanged and they need no knowledge of Docker. Set
+`VIBE_CARLO_NODE_IMAGE` to use a different image, or `VIBE_CARLO_NODE` to point
+at any other node-like executable.
