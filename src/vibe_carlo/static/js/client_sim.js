@@ -4,6 +4,7 @@
  * Direct transliteration of:
  *   src/vibe_carlo/simulation/engine.py
  *   src/vibe_carlo/simulation/distributions.py
+ *   src/vibe_carlo/simulation/solver.py
  *
  * Exposes pure functions so the parity tests (Node) can import them, plus a
  * batched driver for the page (with progress + Stop callback support).
@@ -257,6 +258,190 @@
     }
 
     // -----------------------------------------------------------------------
+    // Safe-spending solver — mirror simulation/solver.py.
+    //
+    // Each run gets an exact critical spending multiplier: the most it could
+    // have spent and still finished solvent (and above targetNetWorth). The
+    // success rate at multiplier m is then the fraction of runs with
+    // m* >= m, so the answer at any success rate is a quantile of m*.
+    //
+    // Solves the whole horizon, which is the single-parameter-set case on the
+    // Python side; plans (which solve only their final phase) are server-side.
+    // -----------------------------------------------------------------------
+
+    const SUCCESS_LEVELS = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50];
+
+    const REFINE_ITERATIONS = 60;
+    const BRACKET_EXPANSIONS = 20;
+
+    function solveCriticalMultipliers(params, indicesFlat, spendingFlat, historicalData, targetNetWorth) {
+        const years = params.years_to_simulate;
+        const nRuns = indicesFlat.length / years;
+        if (!Number.isInteger(nRuns)) {
+            throw new Error('indicesFlat length not divisible by years');
+        }
+        const target = targetNetWorth || 0;
+
+        const totalPortfolio = params.cash_value + params.market_value + params.bond_value;
+        const marketAlloc = params.market_value / totalPortfolio;
+        const bondAlloc = params.bond_value / totalPortfolio;
+        const earnings = params.earnings;
+        const taxRate = params.withdrawal_tax_rate || 0;
+        const taxDivisor = 1.0 / (1.0 - taxRate);
+        const constFlow = -earnings * taxDivisor;
+
+        const criticals = new Float64Array(nRuns);
+        // Kept so the refinement pass does not recompute them.
+        const realReturns = new Float64Array(nRuns * years);
+
+        for (let r = 0; r < nRuns; r++) {
+            const base = r * years;
+            let growth = 1.0;      // A_n, cumulative growth through year n
+            let constPart = 0.0;   // C_n, discounted sum of the m-independent flows
+            let linearPart = 0.0;  // L_n, discounted sum of the per-unit-m flows
+            let bound = Infinity;
+            let failsRegardless = false;
+
+            for (let y = 0; y < years; y++) {
+                const dataIdx = indicesFlat[base + y] * 3;
+                const nominal = marketAlloc * historicalData[dataIdx]
+                    + bondAlloc * historicalData[dataIdx + 1];
+                const real = (1 + nominal) / (1 + historicalData[dataIdx + 2]) - 1;
+                realReturns[base + y] = real;
+
+                growth *= (1 + real);
+                const discount = 1.0 / growth;
+                constPart += constFlow * discount;
+                linearPart += (spendingFlat[base + y] * taxDivisor) * discount;
+
+                // Surviving year n needs G_n < P0.
+                const headroom = totalPortfolio - constPart;
+                if (linearPart > 0) {
+                    const b = headroom / linearPart;
+                    if (b < bound) bound = b;
+                } else if (headroom <= 0) {
+                    failsRegardless = true;
+                }
+
+                if (y === years - 1) {
+                    // Ending above the target is one more bound of the same form.
+                    const terminalHeadroom = headroom - target / growth;
+                    if (linearPart > 0) {
+                        const tb = terminalHeadroom / linearPart;
+                        if (tb < bound) bound = tb;
+                    } else if (terminalHeadroom < 0) {
+                        failsRegardless = true;
+                    }
+                }
+            }
+
+            criticals[r] = (failsRegardless || bound <= 0) ? -Infinity : bound;
+        }
+
+        // The closed form assumed every year withdraws. A surplus year only
+        // breaks that when a gross-up applies to it: at a zero tax rate the
+        // divisor is 1 and `shortfall * 1 - surplus` already equals the linear
+        // `spending - earnings`, so the closed form stays exact.
+        let hasSurplus = false;
+        if (taxDivisor !== 1.0) {
+            for (let r = 0; r < nRuns && !hasSurplus; r++) {
+                const m = Number.isFinite(criticals[r]) ? criticals[r] : 0.0;
+                const base = r * years;
+                for (let y = 0; y < years; y++) {
+                    if (m * spendingFlat[base + y] < earnings) { hasSurplus = true; break; }
+                }
+            }
+        }
+
+        if (hasSurplus) {
+            // survives() is monotone decreasing in m, so bisect each run against
+            // the exact clamped recursion.
+            const survives = function(r, m) {
+                const base = r * years;
+                let value = totalPortfolio;
+                let alive = true;
+                for (let y = 0; y < years; y++) {
+                    const diff = m * spendingFlat[base + y] - earnings;
+                    const flow = diff > 0 ? diff * taxDivisor : diff;
+                    value = value * (1 + realReturns[base + y]) - flow;
+                    if (value < 0) value = 0;
+                    if (!(value > 0)) alive = false;
+                }
+                return alive && value >= target;
+            };
+
+            for (let r = 0; r < nRuns; r++) {
+                const seed = criticals[r];
+                let low = 0.0;
+                let high = Number.isFinite(seed) ? Math.max(seed, 1e-9) : 1e-9;
+
+                // The closed form is optimistic, so `high` normally already
+                // fails; expand for the rare run where it does not.
+                for (let i = 0; i < BRACKET_EXPANSIONS; i++) {
+                    if (!survives(r, high)) break;
+                    high *= 2.0;
+                }
+
+                if (!survives(r, low)) {
+                    criticals[r] = -Infinity;
+                    continue;
+                }
+                for (let i = 0; i < REFINE_ITERATIONS; i++) {
+                    const mid = 0.5 * (low + high);
+                    if (survives(r, mid)) { low = mid; } else { high = mid; }
+                }
+                criticals[r] = low;
+            }
+        }
+
+        return { criticals: criticals, refined: hasSurplus };
+    }
+
+    // numpy.quantile's default linear interpolation, including its lerp, so the
+    // table lands on the same values as the Python solver.
+    function _quantile(sorted, q) {
+        const n = sorted.length;
+        if (n === 1) return sorted[0];
+        const i = q * (n - 1);
+        const lo = Math.floor(i);
+        const hi = Math.ceil(i);
+        if (lo === hi) return sorted[lo];
+        const a = sorted[lo];
+        const b = sorted[hi];
+        const t = i - lo;
+        const diff = b - a;
+        return t >= 0.5 ? b - diff * (1 - t) : a + diff * t;
+    }
+
+    function buildSafeSpendingTable(criticals, k, basisMean, solveYears, targetNetWorth, refined) {
+        if (k <= 0 || !(basisMean > 0)) return null;
+        const sorted = Float64Array.from(criticals.subarray(0, k)).sort();
+
+        const rows = SUCCESS_LEVELS.map(function(level) {
+            // Runs that fail at any spending level carry -Infinity; interpolating
+            // between two of those is NaN, which the finiteness check catches.
+            const value = _quantile(sorted, 1.0 - level / 100.0);
+            if (Number.isFinite(value) && value > 0) {
+                return {
+                    success_pct: level,
+                    multiplier: value,
+                    annual_spending: value * basisMean,
+                };
+            }
+            return { success_pct: level, multiplier: null, annual_spending: null };
+        });
+
+        return {
+            rows: rows,
+            target_net_worth: targetNetWorth || 0,
+            current_mean_spending: basisMean,
+            solve_years: solveYears,
+            phase_name: null,
+            method: refined ? 'refined' : 'closed_form',
+        };
+    }
+
+    // -----------------------------------------------------------------------
     // Page driver — batched execution with onProgress / abort support.
     // -----------------------------------------------------------------------
 
@@ -265,6 +450,7 @@
             nRuns = 10000,
             batchSize = 500,
             seed = null,
+            targetNetWorth = 0,
             onProgress = () => {},
             shouldAbort = () => false,
         } = options || {};
@@ -278,6 +464,12 @@
         const everHitZero = new Uint8Array(nRuns);
         const grossWithdrawalsAll = new Float64Array(nRuns * years);
         const shortfallAll = new Float64Array(nRuns * years);
+        // The critical multiplier is per-run, so batching it needs no more than
+        // concatenation — the same pass yields the simulation and the table.
+        const criticalsAll = new Float64Array(nRuns);
+        let spendingSum = 0;
+        let spendingCells = 0;
+        let refinedAny = false;
 
         let kCompleted = 0;
         for (let i = 0; i < nRuns; i += batchSize) {
@@ -288,6 +480,13 @@
             const indices = buildBootstrapIndices(rng, batchN, years, blockLen, nHistorical);
 
             const batchOut = runEngineCore(params, indices, spending, historicalData);
+            const solved = solveCriticalMultipliers(
+                params, indices, spending, historicalData, targetNetWorth
+            );
+            criticalsAll.set(solved.criticals, i);
+            refinedAny = refinedAny || solved.refined;
+            for (let j = 0; j < spending.length; j++) spendingSum += spending[j];
+            spendingCells += spending.length;
 
             // Copy batch outputs into the global accumulators at offset `i`.
             portfolios.set(batchOut.portfolios, i * (years + 1));
@@ -309,8 +508,12 @@
             grossWithdrawals: grossWithdrawalsAll,
             shortfall: shortfallAll,
         };
+        const basisMean = spendingCells > 0 ? spendingSum / spendingCells : 0;
         return {
             result: computeResults(engineOut, kCompleted, params),
+            safeSpending: buildSafeSpendingTable(
+                criticalsAll, kCompleted, basisMean, years, targetNetWorth, refinedAny
+            ),
             kCompleted: kCompleted,
             nRuns: nRuns,
         };
@@ -342,6 +545,7 @@
         // Form field is a percentage (0-50); internally we store a fraction (0-0.5).
         const taxRatePct = num('withdrawal_tax_rate_pct', 0);
         const withdrawalTaxRate = taxRatePct / 100;
+        const targetNetWorth = num('target_net_worth', 0);
         const distType = str('spending_dist_type') || 'flat';
 
         let spendingDist;
@@ -371,6 +575,7 @@
         if (withdrawalTaxRate < 0 || withdrawalTaxRate >= 1) {
             errors.push('Withdrawal tax rate must be between 0% and 100%');
         }
+        if (targetNetWorth < 0) errors.push('Target net worth must be non-negative');
         if (spendingDist.dist_type === 'uniform' || spendingDist.dist_type === 'truncated_normal') {
             if (spendingDist.low > spendingDist.high) errors.push('Spending: low must be ≤ high');
         }
@@ -391,6 +596,7 @@
                 years_to_simulate: Math.floor(years),
                 withdrawal_tax_rate: withdrawalTaxRate,
             },
+            targetNetWorth: targetNetWorth,
             errors: errors,
         };
     }
@@ -408,6 +614,8 @@
         buildBootstrapIndices,
         // Engine
         runEngineCore, computeResults,
+        // Solver
+        SUCCESS_LEVELS, solveCriticalMultipliers, buildSafeSpendingTable,
         // Driver
         runBatched,
         // Form

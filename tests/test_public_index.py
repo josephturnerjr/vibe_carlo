@@ -154,3 +154,23 @@ def test_inlined_data_is_cached_at_startup() -> None:
     # Same string object identity → not re-serialized per request.
     assert json_after_first is json_after_second
     assert json_after_first != ""
+
+
+# ---------------------------------------------------------------------------
+# Safe-spending table on the landing page
+# ---------------------------------------------------------------------------
+
+
+def test_landing_page_has_target_net_worth_field() -> None:
+    with _public_client() as c:
+        r = c.get("/")
+    assert 'name="target_net_worth"' in r.text
+
+
+def test_landing_page_renders_the_safe_spending_table() -> None:
+    with _public_client() as c:
+        r = c.get("/")
+    # The client-side renderer and the driver that feeds it.
+    assert "renderSafeSpending" in r.text
+    assert "out.safeSpending" in r.text
+    assert "targetNetWorth: parsed.targetNetWorth" in r.text

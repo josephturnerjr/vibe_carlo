@@ -62,6 +62,14 @@
                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
     </div>
 
+    <h2 class="text-lg font-semibold text-gray-700">Safe Spending</h2>
+    <div>
+        <label for="target_net_worth" class="block text-sm font-medium text-gray-600 mb-1">Target net worth at the end ($)</label>
+        <input type="number" name="target_net_worth" id="target_net_worth" value="0" min="0" step="1000"
+               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        <p class="text-xs text-gray-400 mt-1">Leave at $0 to ask only that the money lasts. Raise it to also leave an inheritance or a cushion. Running the simulation also builds a table of the most you could spend at each success rate.</p>
+    </div>
+
     <button type="submit" id="sim-button"
             class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
         Run Simulation
@@ -124,7 +132,57 @@
         return '$' + Math.round(val).toLocaleString('en-US');
     }
 
-    function renderResults(result, params, kCompleted, nRuns) {
+    function renderSafeSpending(table) {
+        if (!table) return '';
+        var html = '';
+        html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
+        html += '<div class="flex items-baseline justify-between mb-1">';
+        html += '<h3 class="text-sm font-semibold text-gray-600 uppercase tracking-wide">Safe Spending</h3>';
+        html += '<span class="text-xs text-gray-400">' + table.solve_years + '-year horizon</span>';
+        html += '</div>';
+
+        var ending = table.target_net_worth > 0
+            ? 'at least ' + formatDollars(table.target_net_worth) + ' left'
+            : 'money left';
+        html += '<p class="text-xs text-gray-500 mb-4">The most you could spend per year and still have ' +
+            ending + ' at the end, in each share of the simulated futures.</p>';
+
+        html += '<div class="overflow-x-auto"><table class="w-full text-sm text-left">';
+        html += '<thead class="text-xs text-gray-500 uppercase border-b border-gray-200"><tr>';
+        html += '<th class="py-2 pr-3">Success rate</th>';
+        html += '<th class="py-2 pr-3 text-right">Annual spending</th>';
+        html += '<th class="py-2 text-right">vs. current</th>';
+        html += '</tr></thead><tbody class="divide-y divide-gray-100">';
+
+        table.rows.forEach(function(row) {
+            var rateClass = row.success_pct >= 90 ? 'text-green-700'
+                          : row.success_pct >= 70 ? 'text-yellow-700'
+                          : 'text-red-700';
+            html += '<tr' + (row.success_pct === 90 ? ' class="bg-blue-50"' : '') + '>';
+            html += '<td class="py-2 pr-3 font-medium ' + rateClass + '">' + row.success_pct + '%</td>';
+            if (row.annual_spending === null) {
+                html += '<td class="py-2 pr-3 text-right text-gray-400 italic">not reachable</td>';
+                html += '<td class="py-2 text-right text-xs text-gray-500">&mdash;</td>';
+            } else {
+                var delta = (row.multiplier - 1) * 100;
+                html += '<td class="py-2 pr-3 text-right font-mono text-gray-800">' + formatDollars(row.annual_spending) + '</td>';
+                html += '<td class="py-2 text-right text-xs text-gray-500">' +
+                    (delta >= 0 ? '+' : '') + delta.toFixed(0) + '%</td>';
+            }
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        html += '<div class="text-xs text-gray-400 mt-4 space-y-1">';
+        html += '<p>Current mean spending is ' + formatDollars(table.current_mean_spending) +
+            '/yr; the table scales your spending distribution up or down as a whole, so its shape is preserved and the figure shown is the resulting mean.</p>';
+        html += '<p><strong>What this assumes:</strong> you set spending once and never adjust it, for the whole period, regardless of how markets behave. Nobody actually does that — a real retiree who trims spending after a bad year does better than these numbers suggest. Treat a row as a reference point, not a budget.</p>';
+        html += '<p>Rows stop at 95% on purpose. The historical dataset is about 100 years long, so the far tail is limited by how much history exists, not by the number of simulations. A 99% row would look more precise than it really is.</p>';
+        html += '</div></div>';
+        return html;
+    }
+
+    function renderResults(result, params, kCompleted, nRuns, safeSpending) {
         purgeSimulationCharts();
         if (!result) {
             resultsEl.innerHTML = '<div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800 text-sm">Stopped before any runs completed — no results to show.</div>';
@@ -170,6 +228,8 @@
             }
             html += '</div>';
         }
+
+        html += renderSafeSpending(safeSpending);
 
         html += '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">';
         html += '<h3 class="text-lg font-semibold text-gray-700 mb-4">Portfolio Projection (real dollars)</h3>';
@@ -217,6 +277,7 @@
         ClientSim.runBatched(parsed.params, data, {
             nRuns: 10000,
             batchSize: 500,
+            targetNetWorth: parsed.targetNetWorth,
             onProgress: function(k, total) {
                 progress.textContent = k.toLocaleString() + ' of ' + total.toLocaleString() + ' runs completed';
             },
@@ -228,7 +289,7 @@
             } else {
                 progress.textContent = 'Done — ' + out.nRuns.toLocaleString() + ' runs completed';
             }
-            renderResults(out.result, parsed.params, out.kCompleted, out.nRuns);
+            renderResults(out.result, parsed.params, out.kCompleted, out.nRuns, out.safeSpending);
         }).catch(function(err) {
             showError('Simulation error: ' + (err && err.message ? err.message : String(err)));
         }).finally(function() {

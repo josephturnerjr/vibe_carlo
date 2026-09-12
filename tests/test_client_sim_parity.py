@@ -57,9 +57,14 @@ def node_bin() -> str:
     return path
 
 
-def _run_js(node_bin: str, body: str) -> Any:
-    """Run a snippet with ClientSim already imported; return the JSON it prints."""
-    script = (
+def _run_js(node_bin: str, body: str, data: dict[str, Any] | None = None) -> Any:
+    """Run a snippet with ClientSim already imported; return the JSON it prints.
+
+    Bulk arrays go in `data`, which arrives on stdin as the global `DATA`.
+    Inlining them in the script instead would blow Linux's 128KB limit on a
+    single argv entry.
+    """
+    preamble = (
         f"const ClientSim = require({json.dumps(str(CLIENT_SIM_PATH))});\n"
         "function emit(v) {\n"
         "  process.stdout.write(JSON.stringify(v, function(_, x) {\n"
@@ -70,13 +75,17 @@ def _run_js(node_bin: str, body: str) -> Any:
         "    ) { return Array.from(x); }\n"
         "    return x;\n"
         "  }));\n"
-        "}\n" + body
+        "}\n"
     )
+    if data is not None:
+        preamble += "const DATA = JSON.parse(require('fs').readFileSync(0, 'utf8'));\n"
+
     proc = subprocess.run(
-        [node_bin, "-e", script],
+        [node_bin, "-e", preamble + body],
+        input=json.dumps(data) if data is not None else "",
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"node failed: {proc.stderr}")
@@ -630,3 +639,286 @@ def test_python_engine_still_works_unchanged() -> None:
     rng = np.random.default_rng(0)
     idx = _build_bootstrap_indices(rng, 5, 10, 10, len(historical))
     assert idx.shape == (5, 10)
+
+
+# ---------------------------------------------------------------------------
+# Safe-spending solver parity
+# ---------------------------------------------------------------------------
+
+
+def _py_critical_multipliers(
+    params: SimulationInput,
+    indices: np.ndarray,
+    spending: np.ndarray,
+    historical: np.ndarray,
+    target_net_worth: float,
+) -> tuple[list[float | None], str]:
+    """Python solver over injected arrays, so both sides see identical inputs."""
+    from vibe_carlo.simulation import solver
+    from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
+
+    n_runs, years = indices.shape
+    total = params.cash_value + params.market_value + params.bond_value
+    sampled = historical[indices]
+    nominal = (params.market_value / total) * sampled[:, :, COL_SP500] + (
+        params.bond_value / total
+    ) * sampled[:, :, COL_BOND]
+    real_returns = (1 + nominal) / (1 + sampled[:, :, COL_CPI]) - 1
+
+    earnings = np.full((n_runs, years), params.earnings, dtype=np.float64)
+    tax_divisor = np.full((n_runs, years), 1.0 / (1.0 - params.withdrawal_tax_rate))
+
+    table = solver._solve(
+        real_returns,
+        spending,
+        earnings,
+        tax_divisor,
+        slice(0, years),
+        total,
+        target_net_worth,
+        phase_name=None,
+    )
+    return [row.multiplier for row in table.rows], table.method
+
+
+def _solver_compare(
+    node_bin: str,
+    params: SimulationInput,
+    indices: np.ndarray,
+    spending: np.ndarray,
+    historical: np.ndarray,
+    target_net_worth: float = 0.0,
+) -> None:
+    n_runs, years = indices.shape
+    js_params = {
+        "cash_value": params.cash_value,
+        "market_value": params.market_value,
+        "bond_value": params.bond_value,
+        "earnings": params.earnings,
+        "years_to_simulate": params.years_to_simulate,
+        "withdrawal_tax_rate": params.withdrawal_tax_rate,
+    }
+    js_out = _run_js(
+        node_bin,
+        "const idx = new Int32Array(DATA.indices);\n"
+        "const spend = new Float64Array(DATA.spending);\n"
+        "const hist = new Float64Array(DATA.historical);\n"
+        "const solved = ClientSim.solveCriticalMultipliers(\n"
+        "  DATA.params, idx, spend, hist, DATA.target\n"
+        ");\n"
+        "let sum = 0;\n"
+        "for (let i = 0; i < spend.length; i++) sum += spend[i];\n"
+        "emit(ClientSim.buildSafeSpendingTable(\n"
+        "  solved.criticals, DATA.nRuns, sum / spend.length, DATA.years,\n"
+        "  DATA.target, solved.refined\n"
+        "));",
+        data={
+            "params": js_params,
+            "indices": indices.flatten().tolist(),
+            "spending": spending.flatten().tolist(),
+            "historical": historical.flatten().tolist(),
+            "target": target_net_worth,
+            "nRuns": n_runs,
+            "years": years,
+        },
+    )
+
+    py_multipliers, py_method = _py_critical_multipliers(
+        params, indices, spending, historical, target_net_worth
+    )
+
+    assert js_out["method"] == py_method
+    assert [row["success_pct"] for row in js_out["rows"]] == [
+        95,
+        90,
+        85,
+        80,
+        75,
+        70,
+        65,
+        60,
+        55,
+        50,
+    ]
+    assert abs(js_out["current_mean_spending"] - float(np.mean(spending))) < 1e-6
+
+    for row, py_m in zip(js_out["rows"], py_multipliers):
+        if py_m is None:
+            assert row["multiplier"] is None
+            continue
+        assert row["multiplier"] is not None
+        assert abs(row["multiplier"] - py_m) < 1e-9, (
+            f"{row['success_pct']}%: {row['multiplier']} vs {py_m}"
+        )
+
+
+def _solver_fixtures(
+    seed: int, n_runs: int = 400, years: int = 30
+) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    historical = load_historical_data()
+    indices = _build_bootstrap_indices(rng, n_runs, years, 5, len(historical))
+    return indices, historical
+
+
+def _solver_params(
+    spending: FlatDistribution | TruncatedNormalDistribution,
+    earnings: float = 0.0,
+    tax: float = 0.0,
+) -> SimulationInput:
+    return SimulationInput(
+        cash_value=50_000.0,
+        market_value=800_000.0,
+        bond_value=150_000.0,
+        earnings=earnings,
+        spending_distribution=spending,
+        years_to_simulate=30,
+        sample_years=5,
+        withdrawal_tax_rate=tax,
+    )
+
+
+def test_js_solver_flat_spending(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=11)
+    params = _solver_params(FlatDistribution(value=40_000))
+    spending = np.full(indices.shape, 40_000.0)
+    _solver_compare(node_bin, params, indices, spending, historical)
+
+
+def test_js_solver_with_tax(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=12)
+    params = _solver_params(FlatDistribution(value=40_000), tax=0.22)
+    spending = np.full(indices.shape, 40_000.0)
+    _solver_compare(node_bin, params, indices, spending, historical)
+
+
+def test_js_solver_varying_spending(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=13)
+    params = _solver_params(FlatDistribution(value=45_000), tax=0.15)
+    rng = np.random.default_rng(99)
+    spending = rng.uniform(30_000, 60_000, size=indices.shape)
+    _solver_compare(node_bin, params, indices, spending, historical)
+
+
+def test_js_solver_terminal_target(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=14)
+    params = _solver_params(FlatDistribution(value=40_000))
+    spending = np.full(indices.shape, 40_000.0)
+    _solver_compare(node_bin, params, indices, spending, historical, target_net_worth=500_000.0)
+
+
+def test_js_solver_refinement_path(node_bin: str) -> None:
+    """Earnings inside the spending range plus a tax rate forces the bisection."""
+    indices, historical = _solver_fixtures(seed=15)
+    params = _solver_params(FlatDistribution(value=60_000), earnings=60_000.0, tax=0.25)
+    rng = np.random.default_rng(7)
+    spending = rng.uniform(30_000, 90_000, size=indices.shape)
+    _solver_compare(node_bin, params, indices, spending, historical)
+
+
+def test_js_solver_surplus_without_tax_stays_closed_form(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=16)
+    params = _solver_params(FlatDistribution(value=60_000), earnings=60_000.0)
+    rng = np.random.default_rng(8)
+    spending = rng.uniform(30_000, 90_000, size=indices.shape)
+    _solver_compare(node_bin, params, indices, spending, historical)
+
+
+def test_js_solver_unreachable_target_is_null(node_bin: str) -> None:
+    indices, historical = _solver_fixtures(seed=17, n_runs=200)
+    params = _solver_params(FlatDistribution(value=40_000))
+    spending = np.full(indices.shape, 40_000.0)
+    _solver_compare(
+        node_bin, params, indices, spending, historical, target_net_worth=500_000_000.0
+    )
+
+
+def test_js_solver_round_trips_through_the_js_engine(node_bin: str) -> None:
+    """Solve for 90%, spend that much, and check the JS engine agrees.
+
+    Same property the Python solver tests assert, verified end to end inside
+    the browser engine rather than across the language boundary.
+    """
+    indices, historical = _solver_fixtures(seed=21, n_runs=2_000)
+    params = _solver_params(FlatDistribution(value=40_000), tax=0.15)
+    spending = np.full(indices.shape, 40_000.0)
+    js_params = {
+        "cash_value": params.cash_value,
+        "market_value": params.market_value,
+        "bond_value": params.bond_value,
+        "earnings": params.earnings,
+        "years_to_simulate": params.years_to_simulate,
+        "withdrawal_tax_rate": params.withdrawal_tax_rate,
+    }
+
+    success = _run_js(
+        node_bin,
+        "const idx = new Int32Array(DATA.indices);\n"
+        "const spend = new Float64Array(DATA.spending);\n"
+        "const hist = new Float64Array(DATA.historical);\n"
+        "const solved = ClientSim.solveCriticalMultipliers(DATA.params, idx, spend, hist, 0);\n"
+        "let sum = 0;\n"
+        "for (let i = 0; i < spend.length; i++) sum += spend[i];\n"
+        "const table = ClientSim.buildSafeSpendingTable(\n"
+        "  solved.criticals, DATA.nRuns, sum / spend.length, DATA.years, 0, solved.refined\n"
+        ");\n"
+        "const row = table.rows.find(function(r) { return r.success_pct === 90; });\n"
+        "const scaled = new Float64Array(spend.length);\n"
+        "for (let i = 0; i < spend.length; i++) scaled[i] = spend[i] * row.multiplier;\n"
+        "const out = ClientSim.runEngineCore(DATA.params, idx, scaled, hist);\n"
+        "emit(ClientSim.computeResults(out, DATA.nRuns, DATA.params).success_rate);",
+        data={
+            "params": js_params,
+            "indices": indices.flatten().tolist(),
+            "spending": spending.flatten().tolist(),
+            "historical": historical.flatten().tolist(),
+            "nRuns": indices.shape[0],
+            "years": indices.shape[1],
+        },
+    )
+    # Exact to the granularity of the run count.
+    assert abs(success * 100 - 90) < 0.1
+
+
+def test_js_run_batched_produces_a_safe_spending_table(node_bin: str) -> None:
+    """The batched page driver accumulates per-run multipliers across batches."""
+    historical = load_historical_data()
+    js_params = {
+        "cash_value": 50_000.0,
+        "market_value": 800_000.0,
+        "bond_value": 150_000.0,
+        "earnings": 0.0,
+        "spending_distribution": {"dist_type": "flat", "value": 40_000},
+        "years_to_simulate": 30,
+        "sample_years": 5,
+        "withdrawal_tax_rate": 0.0,
+    }
+    table = _run_js(
+        node_bin,
+        "const hist = new Float64Array(DATA.historical);\n"
+        "ClientSim.runBatched(DATA.params, hist, {\n"
+        "  nRuns: 2000, batchSize: 500, seed: 42, targetNetWorth: 0,\n"
+        "}).then(function(out) { emit(out.safeSpending); });",
+        data={"params": js_params, "historical": historical.flatten().tolist()},
+    )
+
+    assert [row["success_pct"] for row in table["rows"]] == [
+        95,
+        90,
+        85,
+        80,
+        75,
+        70,
+        65,
+        60,
+        55,
+        50,
+    ]
+    assert table["method"] == "closed_form"
+    assert table["solve_years"] == 30
+    assert table["current_mean_spending"] == pytest.approx(40_000)
+
+    spends = [row["annual_spending"] for row in table["rows"]]
+    assert all(s is not None for s in spends)
+    # Success rates descend, so the spending they allow must ascend.
+    assert spends == sorted(spends)

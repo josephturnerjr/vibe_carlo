@@ -74,6 +74,14 @@ Rows stop at 95% deliberately: the historical dataset is ~100 years long, so the
 far tail is limited by how much history exists rather than by the number of
 Monte Carlo runs, and a 99% row would imply a precision the model does not have.
 
+The solver is transliterated into `static/js/client_sim.js` as well, so the
+public landing page builds the same table client-side. Because the critical
+multiplier is per-run, the batched page driver accumulates it by concatenation —
+one pass produces both the fan chart and the table, and stopping early just
+yields a table over the runs that finished. The JS-parity tests check the two
+implementations agree multiplier-for-multiplier, refinement path included. Only
+plans are server-only, since the landing page has no plans to solve.
+
 ## Running Locally
 
 ```bash
