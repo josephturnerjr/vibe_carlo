@@ -116,7 +116,7 @@ def create_parameter_set(
         INSERT INTO plan_parameter_sets
             (plan_id, name, order_position, duration,
              cash_value, market_value, bond_value, earnings,
-             spending_distribution, filing_status)
+             spending_distribution, withdrawal_tax_rate)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -129,7 +129,7 @@ def create_parameter_set(
             params.bond_value,
             params.earnings,
             serialize_distribution(params.spending_distribution),
-            params.filing_status.value if params.filing_status else None,
+            params.withdrawal_tax_rate,
         ),
     )
     conn.commit()
@@ -182,7 +182,7 @@ def update_parameter_set(
         UPDATE plan_parameter_sets SET
             name = ?, duration = ?,
             cash_value = ?, market_value = ?, bond_value = ?,
-            earnings = ?, spending_distribution = ?, filing_status = ?,
+            earnings = ?, spending_distribution = ?, withdrawal_tax_rate = ?,
             updated_at = datetime('now')
         WHERE id = ? AND plan_id IN (
             SELECT id FROM plans WHERE user_id = ?
@@ -196,7 +196,7 @@ def update_parameter_set(
             params.bond_value,
             params.earnings,
             serialize_distribution(params.spending_distribution),
-            params.filing_status.value if params.filing_status else None,
+            params.withdrawal_tax_rate,
             param_set_id,
             user_id,
         ),

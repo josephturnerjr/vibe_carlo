@@ -3,14 +3,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-
-class FilingStatus(StrEnum):
-    single = "single"
-    married_jointly = "married_jointly"
-    married_separately = "married_separately"
-    head_of_household = "head_of_household"
-
-
 # ---------------------------------------------------------------------------
 # Spending distribution models (discriminated union on dist_type)
 # ---------------------------------------------------------------------------
@@ -65,7 +57,7 @@ class SimulationInput(BaseModel):
     )
     years_to_simulate: int
     sample_years: int | None = None
-    filing_status: FilingStatus | None = None
+    withdrawal_tax_rate: float = Field(default=0.0, ge=0.0, lt=1.0)
 
     @field_validator("cash_value", "market_value", "bond_value")
     @classmethod
@@ -147,7 +139,7 @@ class ParamSetSpec(BaseModel):
     bond_value: float
     earnings: float = 0.0
     spending_distribution: SpendingDistribution
-    filing_status: FilingStatus | None = None
+    withdrawal_tax_rate: float = Field(default=0.0, ge=0.0, lt=1.0)
 
 
 class PlanParameterSet(BaseModel):
@@ -161,7 +153,7 @@ class PlanParameterSet(BaseModel):
     bond_value: float
     earnings: float = 0.0
     spending_distribution: SpendingDistribution
-    filing_status: FilingStatus | None = None
+    withdrawal_tax_rate: float = Field(default=0.0, ge=0.0, lt=1.0)
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -186,7 +178,7 @@ class SnapshotRow(BaseModel):
     spending_distribution: SpendingDistribution
     years_to_simulate: int
     sample_years: int | None = None
-    filing_status: FilingStatus | None = None
+    withdrawal_tax_rate: float = Field(default=0.0, ge=0.0, lt=1.0)
     created_at: str | None = None
     updated_at: str | None = None
 

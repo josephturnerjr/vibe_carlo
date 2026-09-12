@@ -133,17 +133,11 @@ def test_public_page_distribution_picker_present() -> None:
     assert 'value="truncated_normal"' in r.text
 
 
-def test_public_page_filing_status_options_present() -> None:
+def test_public_page_withdrawal_tax_rate_input_present() -> None:
     with _public_client() as c:
         r = c.get("/")
-    for option in (
-        'value=""',
-        'value="single"',
-        'value="married_jointly"',
-        'value="married_separately"',
-        'value="head_of_household"',
-    ):
-        assert option in r.text
+    assert 'name="withdrawal_tax_rate_pct"' in r.text
+    assert "Assumed tax rate on withdrawals" in r.text
 
 
 # ---------------------------------------------------------------------------

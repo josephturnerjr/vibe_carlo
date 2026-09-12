@@ -55,7 +55,7 @@ def _snapshot_form_data(
     dist_stddev: str = "5000",
     years: str = "30",
     sample_years: str = "",
-    filing_status: str = "",
+    withdrawal_tax_rate_pct: str = "",
 ) -> dict[str, str]:
     data: dict[str, str] = {
         "snapshot_name": name,
@@ -74,8 +74,8 @@ def _snapshot_form_data(
     }
     if sample_years:
         data["sample_years"] = sample_years
-    if filing_status:
-        data["filing_status"] = filing_status
+    if withdrawal_tax_rate_pct:
+        data["withdrawal_tax_rate_pct"] = withdrawal_tax_rate_pct
     return data
 
 
@@ -188,7 +188,7 @@ def test_snapshot_round_trip(client: TestClient, _db_path: tuple[Path, int]) -> 
         dist_low="40000",
         dist_high="70000",
         years="35",
-        filing_status="married_jointly",
+        withdrawal_tax_rate_pct="18",
     )
     response = client.post("/snapshots/save", data=data)
     assert response.status_code == 200

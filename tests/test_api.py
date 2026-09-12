@@ -65,16 +65,16 @@ def test_simulate_with_tax_settings(auth_client: TestClient) -> None:
             "spending_dist_type": "flat",
             "spending_dist_value": "50000",
             "years_to_simulate": "10",
-            "filing_status": "single",
+            "withdrawal_tax_rate_pct": "20",
         },
     )
     assert response.status_code == 200
     assert "Portfolio Survival Rate" in response.text
-    assert "Federal Tax Adjustment" in response.text
+    assert "Tax Adjustment" in response.text
     assert "Gross" in response.text
 
 
-def test_simulate_without_filing_status_no_tax_card(auth_client: TestClient) -> None:
+def test_simulate_without_tax_rate_no_tax_card(auth_client: TestClient) -> None:
     response = auth_client.post(
         "/simulate",
         data={
@@ -88,10 +88,10 @@ def test_simulate_without_filing_status_no_tax_card(auth_client: TestClient) -> 
         },
     )
     assert response.status_code == 200
-    assert "Federal Tax Adjustment" not in response.text
+    assert "Tax Adjustment" not in response.text
 
 
-def test_simulate_invalid_filing_status(auth_client: TestClient) -> None:
+def test_simulate_invalid_tax_rate(auth_client: TestClient) -> None:
     response = auth_client.post(
         "/simulate",
         data={
@@ -102,7 +102,7 @@ def test_simulate_invalid_filing_status(auth_client: TestClient) -> None:
             "spending_dist_type": "flat",
             "spending_dist_value": "5000",
             "years_to_simulate": "10",
-            "filing_status": "invalid_status",
+            "withdrawal_tax_rate_pct": "150",
         },
     )
     assert response.status_code == 422
@@ -174,9 +174,9 @@ def test_simulate_uniform_with_tax(auth_client: TestClient) -> None:
             "spending_dist_low": "40000",
             "spending_dist_high": "60000",
             "years_to_simulate": "10",
-            "filing_status": "single",
+            "withdrawal_tax_rate_pct": "22",
         },
     )
     assert response.status_code == 200
-    assert "Federal Tax Adjustment" in response.text
+    assert "Tax Adjustment" in response.text
     assert "Avg gross" in response.text

@@ -17,14 +17,12 @@ import numpy as np
 import pytest
 
 from vibe_carlo.schemas import (
-    FilingStatus,
     FlatDistribution,
     SimulationInput,
     TruncatedNormalDistribution,
 )
 from vibe_carlo.simulation.engine import _build_bootstrap_indices, run_simulation
 from vibe_carlo.simulation.models import load_historical_data
-from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
 CLIENT_SIM_PATH = (
     Path(__file__).resolve().parent.parent
@@ -69,51 +67,6 @@ def _run_js(node_bin: str, body: str) -> Any:
     if proc.returncode != 0:
         raise RuntimeError(f"node failed: {proc.stderr}")
     return json.loads(proc.stdout)
-
-
-# ---------------------------------------------------------------------------
-# Tax gross-up — exact parity (deterministic, no RNG)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("filing_status", list(FilingStatus))
-def test_js_gross_up_array_each_filing_status(node_bin: str, filing_status: FilingStatus) -> None:
-    cases = [
-        0.0,
-        1.0,
-        100.0,
-        16_099.0,
-        16_100.0,
-        16_101.0,
-        50_000.0,
-        100_000.0,
-        250_000.0,
-        750_000.0,
-        5_000_000.0,
-        10_000_000.0,
-    ]
-    py_results = gross_up_withdrawal_array(np.array(cases), filing_status).tolist()
-    js_results = _run_js(
-        node_bin,
-        f"const arr = new Float64Array({json.dumps(cases)});\n"
-        f"const fs = {json.dumps(filing_status.value)};\n"
-        "emit(Array.from(ClientSim.grossUpWithdrawalArray(arr, fs)));",
-    )
-    assert len(js_results) == len(py_results)
-    for js, py in zip(js_results, py_results):
-        assert abs(js - py) < 1e-3, f"JS {js} vs Py {py}"
-    # Sanity: top-bracket value must require gross > spending
-    assert js_results[-1] > 10_000_000.0
-
-
-def test_js_gross_up_zero_and_negative_clamped(node_bin: str) -> None:
-    cases = [0.0, -100.0, -1e9]
-    js = _run_js(
-        node_bin,
-        f"const arr = new Float64Array({json.dumps(cases)});\n"
-        "emit(Array.from(ClientSim.grossUpWithdrawalArray(arr, 'single')));",
-    )
-    assert js == [0.0, 0.0, 0.0]
 
 
 # ---------------------------------------------------------------------------
@@ -290,18 +243,17 @@ def _engine_e2e_compare(
     spending_flat = spending.flatten().tolist()
     hist_flat = historical.flatten().tolist()
 
-    fs_js = json.dumps(params.filing_status.value if params.filing_status else None)
     js_params = {
         "cash_value": params.cash_value,
         "market_value": params.market_value,
         "bond_value": params.bond_value,
         "earnings": params.earnings,
         "years_to_simulate": params.years_to_simulate,
+        "withdrawal_tax_rate": params.withdrawal_tax_rate,
     }
     js_out = _run_js(
         node_bin,
         f"const params = {json.dumps(js_params)};\n"
-        f"params.filing_status = {fs_js};\n"
         f"const idx = new Int32Array({json.dumps(indices_flat)});\n"
         f"const spend = new Float64Array({json.dumps(spending_flat)});\n"
         f"const hist = new Float64Array({json.dumps(hist_flat)});\n"
@@ -318,7 +270,7 @@ def _engine_e2e_compare(
     assert abs(js_out["success_rate"] - py_out["success_rate"]) < 1e-9
     for js_v, py_v in zip(js_out["final_year_distribution"], py_out["final_year_distribution"]):
         assert abs(js_v - py_v) < 1e-6
-    if params.filing_status is not None:
+    if params.withdrawal_tax_rate > 0:
         assert abs(js_out["gross_withdrawal"] - py_out["gross_withdrawal"]) < 1e-3
         assert abs(js_out["effective_tax_rate"] - py_out["effective_tax_rate"]) < 1e-9
     else:
@@ -334,7 +286,6 @@ def _run_python_engine(
 ) -> dict[str, Any]:
     """Replicate engine.run_simulation but with injected arrays (no RNG)."""
     from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
-    from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
     years = params.years_to_simulate
     n_runs = indices.shape[0]
@@ -342,8 +293,8 @@ def _run_python_engine(
     shortfall = np.maximum(spending - params.earnings, 0.0)
     surplus = np.maximum(params.earnings - spending, 0.0)
 
-    if params.filing_status is not None:
-        gross_withdrawals = gross_up_withdrawal_array(shortfall, params.filing_status)
+    if params.withdrawal_tax_rate > 0:
+        gross_withdrawals = shortfall / (1.0 - params.withdrawal_tax_rate)
     else:
         gross_withdrawals = shortfall
 
@@ -376,11 +327,9 @@ def _run_python_engine(
     final = portfolios[:, -1].tolist()
 
     gross = etr = None
-    if params.filing_status is not None:
-        mean_g = float(np.mean(gross_withdrawals))
-        mean_s = float(np.mean(shortfall))
-        gross = mean_g
-        etr = (mean_g - mean_s) / mean_g if mean_g > 0 else 0.0
+    if params.withdrawal_tax_rate > 0:
+        gross = float(np.mean(gross_withdrawals))
+        etr = params.withdrawal_tax_rate
 
     return {
         "percentiles": percentiles,
@@ -424,7 +373,7 @@ def test_js_engine_e2e_with_tax_truncated_normal_spending(node_bin: str) -> None
             low=55_000, high=100_000, mean=74_000, stddev=5_000
         ),
         years_to_simulate=years,
-        filing_status=FilingStatus.single,
+        withdrawal_tax_rate=0.22,
     )
     _engine_e2e_compare(node_bin, params, indices, spending, historical)
 
@@ -457,7 +406,7 @@ def test_js_engine_e2e_huge_earnings_no_withdrawal(node_bin: str) -> None:
         earnings=500_000,
         spending_distribution=FlatDistribution(value=1_000),
         years_to_simulate=years,
-        filing_status=FilingStatus.married_jointly,
+        withdrawal_tax_rate=0.15,
     )
     _engine_e2e_compare(node_bin, params, indices, spending, historical)
 
@@ -514,7 +463,7 @@ def test_js_engine_percentiles_include_year_zero(node_bin: str) -> None:
         "bond_value": 0,
         "earnings": 0,
         "years_to_simulate": years,
-        "filing_status": None,
+        "withdrawal_tax_rate": 0,
     }
     js_out = _run_js(
         node_bin,
@@ -544,7 +493,7 @@ def test_js_engine_success_rate_range(node_bin: str) -> None:
         "bond_value": 0,
         "earnings": 0,
         "years_to_simulate": years,
-        "filing_status": None,
+        "withdrawal_tax_rate": 0,
     }
     js_out = _run_js(
         node_bin,
@@ -575,7 +524,7 @@ def test_js_partial_results_match_full_when_k_equals_n(node_bin: str) -> None:
         "bond_value": 0,
         "earnings": 0,
         "years_to_simulate": years,
-        "filing_status": None,
+        "withdrawal_tax_rate": 0,
     }
     full_and_partial = _run_js(
         node_bin,
@@ -604,7 +553,7 @@ def test_js_partial_results_smaller_k_produces_valid_output(node_bin: str) -> No
         "bond_value": 0,
         "earnings": 0,
         "years_to_simulate": years,
-        "filing_status": None,
+        "withdrawal_tax_rate": 0,
     }
     js_out = _run_js(
         node_bin,
@@ -629,7 +578,7 @@ def test_js_partial_results_k_zero_handled(node_bin: str) -> None:
         "bond_value": 0,
         "earnings": 0,
         "years_to_simulate": 1,
-        "filing_status": None,
+        "withdrawal_tax_rate": 0,
     }
     js_out = _run_js(
         node_bin,

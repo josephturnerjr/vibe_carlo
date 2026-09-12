@@ -62,18 +62,21 @@
     </div>
 
     <h2 class="text-lg font-semibold text-gray-700">Tax Settings (optional)</h2>
-    <p class="text-xs text-gray-400 -mt-4">For traditional (pre-tax) retirement account withdrawals. Adjusts withdrawals to cover federal income tax.</p>
     <div>
-        <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
-        <select name="filing_status" id="filing_status"
-                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
-            {% set fs = snapshot.filing_status if snapshot else "single" %}
-            <option value="" {{ "selected" if not fs }}>None (no tax adjustment)</option>
-            <option value="single" {{ "selected" if fs == "single" }}>Single</option>
-            <option value="married_jointly" {{ "selected" if fs == "married_jointly" }}>Married Filing Jointly</option>
-            <option value="married_separately" {{ "selected" if fs == "married_separately" }}>Married Filing Separately</option>
-            <option value="head_of_household" {{ "selected" if fs == "head_of_household" }}>Head of Household</option>
-        </select>
+        <label for="withdrawal_tax_rate_pct" class="block text-sm font-medium text-gray-600 mb-1">Assumed tax rate on withdrawals (%)</label>
+        <input type="number" name="withdrawal_tax_rate_pct" id="withdrawal_tax_rate_pct"
+               value="{{ '%.1f'|format(snapshot.withdrawal_tax_rate * 100) if snapshot else 0 }}"
+               min="0" max="60" step="0.1"
+               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        <div class="text-xs text-gray-500 mt-2 space-y-1">
+            <p>Portfolio withdrawals are grossed up so the amount you spend is <em>after</em> tax. Roughly:</p>
+            <ul class="list-disc pl-5 space-y-0.5">
+                <li><strong>0%</strong> — Roth accounts, or if you're already thinking in after-tax dollars.</li>
+                <li><strong>15–25%</strong> — Traditional 401(k)/IRA withdrawals for most retirees.</li>
+                <li><strong>10–15%</strong> — Taxable brokerage, if most of the withdrawal is long-term capital gains.</li>
+            </ul>
+            <p>This is a simplification. A future version will let you split the portfolio by account type.</p>
+        </div>
     </div>
 
     <h2 class="text-lg font-semibold text-gray-700">Simulation</h2>

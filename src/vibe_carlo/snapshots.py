@@ -40,7 +40,7 @@ def create_snapshot(
         INSERT INTO snapshots
             (user_id, name, snapshot_date, cash_value, market_value, bond_value,
              earnings, spending_distribution, years_to_simulate,
-             sample_years, filing_status)
+             sample_years, withdrawal_tax_rate)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -54,7 +54,7 @@ def create_snapshot(
             serialize_distribution(params.spending_distribution),
             params.years_to_simulate,
             params.sample_years,
-            params.filing_status.value if params.filing_status else None,
+            params.withdrawal_tax_rate,
         ),
     )
     conn.commit()
@@ -102,7 +102,7 @@ def update_snapshot(
             spending_distribution = ?,
             years_to_simulate = ?,
             sample_years = ?,
-            filing_status = ?,
+            withdrawal_tax_rate = ?,
             updated_at = datetime('now')
         WHERE id = ? AND user_id = ?
         """,
@@ -116,7 +116,7 @@ def update_snapshot(
             serialize_distribution(params.spending_distribution),
             params.years_to_simulate,
             params.sample_years,
-            params.filing_status.value if params.filing_status else None,
+            params.withdrawal_tax_rate,
             snapshot_id,
             user_id,
         ),

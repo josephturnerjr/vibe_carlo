@@ -122,10 +122,9 @@ def compute_timeline(
             spending_distribution=earlier.spending_distribution,
             years_to_simulate=year_gap,
             sample_years=earlier.sample_years,
-            filing_status=earlier.filing_status,
+            withdrawal_tax_rate=earlier.withdrawal_tax_rate,
         )
         result = run_simulation(sim_input, historical_data, n_runs=n_runs, seed=seed)
-
         dist = np.array(result.final_year_distribution, dtype=np.float64)
         actual = _net_value(later)
 
@@ -152,7 +151,7 @@ def compute_timeline(
             spending_distribution=newest.spending_distribution,
             years_to_simulate=future_years,
             sample_years=newest.sample_years,
-            filing_status=newest.filing_status,
+            withdrawal_tax_rate=newest.withdrawal_tax_rate,
         )
         result = run_simulation(sim_input, historical_data, n_runs=n_runs, seed=seed)
 

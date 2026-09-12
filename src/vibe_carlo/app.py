@@ -37,7 +37,6 @@ from vibe_carlo.plans import (
 )
 from vibe_carlo.schemas import (
     AccountType,
-    FilingStatus,
     FlatDistribution,
     ParamSetSpec,
     PlanParameterSet,
@@ -174,9 +173,13 @@ def _parse_form_params(
     spending_dist_stddev: float,
     years_to_simulate: int,
     sample_years: int | None,
-    filing_status: str | None,
+    withdrawal_tax_rate_pct: float,
 ) -> SimulationInput:
-    """Parse and validate form fields into a SimulationInput."""
+    """Parse and validate form fields into a SimulationInput.
+
+    The form field is a percentage (e.g. 20 for 20%); internally we store a
+    fraction on [0, 1).
+    """
     spending_dist = _parse_distribution(
         spending_dist_type,
         spending_dist_value,
@@ -193,7 +196,7 @@ def _parse_form_params(
         spending_distribution=spending_dist,
         years_to_simulate=years_to_simulate,
         sample_years=sample_years,
-        filing_status=FilingStatus(filing_status) if filing_status else None,
+        withdrawal_tax_rate=withdrawal_tax_rate_pct / 100.0,
     )
 
 
@@ -296,7 +299,7 @@ async def simulate(
     spending_dist_stddev: float = Form(default=5000.0),
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
-    filing_status: str | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
@@ -316,7 +319,7 @@ async def simulate(
             spending_dist_stddev,
             years_to_simulate,
             sample_years,
-            filing_status,
+            withdrawal_tax_rate_pct,
         )
     except (ValidationError, ValueError) as e:
         if isinstance(e, ValidationError):
@@ -376,7 +379,7 @@ async def save_snapshot(
     spending_dist_stddev: float = Form(default=5000.0),
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
-    filing_status: str | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
@@ -402,7 +405,7 @@ async def save_snapshot(
             spending_dist_stddev,
             years_to_simulate,
             sample_years,
-            filing_status,
+            withdrawal_tax_rate_pct,
         )
     except (ValidationError, ValueError) as e:
         if isinstance(e, ValidationError):
@@ -442,7 +445,7 @@ async def update_snapshot_route(
     spending_dist_stddev: float = Form(default=5000.0),
     years_to_simulate: int = Form(default=30),
     sample_years: int | None = Form(default=None),
-    filing_status: str | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
@@ -468,7 +471,7 @@ async def update_snapshot_route(
             spending_dist_stddev,
             years_to_simulate,
             sample_years,
-            filing_status,
+            withdrawal_tax_rate_pct,
         )
     except (ValidationError, ValueError) as e:
         if isinstance(e, ValidationError):
@@ -752,7 +755,7 @@ def _parse_param_set_form(
     spending_dist_high: float,
     spending_dist_mean: float,
     spending_dist_stddev: float,
-    filing_status: str | None,
+    withdrawal_tax_rate_pct: float,
 ) -> ParamSetSpec:
     """Parse form fields into a ParamSetSpec for create/update_parameter_set."""
     spending_dist = _parse_distribution(
@@ -771,7 +774,7 @@ def _parse_param_set_form(
         bond_value=bond_value,
         earnings=earnings,
         spending_distribution=spending_dist,
-        filing_status=FilingStatus(filing_status) if filing_status else None,
+        withdrawal_tax_rate=withdrawal_tax_rate_pct / 100.0,
     )
 
 
@@ -908,7 +911,7 @@ async def add_parameter_set_route(
     spending_dist_high: float = Form(default=0.0),
     spending_dist_mean: float = Form(default=0.0),
     spending_dist_stddev: float = Form(default=5000.0),
-    filing_status: str | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
@@ -929,7 +932,7 @@ async def add_parameter_set_route(
             spending_dist_high,
             spending_dist_mean,
             spending_dist_stddev,
-            filing_status,
+            withdrawal_tax_rate_pct,
         )
     except (ValidationError, ValueError):
         return HTMLResponse(
@@ -971,7 +974,7 @@ async def update_parameter_set_route(
     spending_dist_high: float = Form(default=0.0),
     spending_dist_mean: float = Form(default=0.0),
     spending_dist_stddev: float = Form(default=5000.0),
-    filing_status: str | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
 ) -> Response:
     user = _get_current_user(request)
     if user is None:
@@ -992,7 +995,7 @@ async def update_parameter_set_route(
             spending_dist_high,
             spending_dist_mean,
             spending_dist_stddev,
-            filing_status,
+            withdrawal_tax_rate_pct,
         )
     except (ValidationError, ValueError):
         return HTMLResponse(

@@ -92,16 +92,12 @@
             </div>
 
             <div>
-                <label for="filing_status" class="block text-sm font-medium text-gray-600 mb-1">Filing Status</label>
-                <select name="filing_status" id="filing_status"
-                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
-                    {% set fs = edit_param.filing_status if edit_param else None %}
-                    <option value="" {{ "selected" if not fs }}>None (no tax adjustment)</option>
-                    <option value="single" {{ "selected" if fs and fs.value == "single" }}>Single</option>
-                    <option value="married_jointly" {{ "selected" if fs and fs.value == "married_jointly" }}>Married Filing Jointly</option>
-                    <option value="married_separately" {{ "selected" if fs and fs.value == "married_separately" }}>Married Filing Separately</option>
-                    <option value="head_of_household" {{ "selected" if fs and fs.value == "head_of_household" }}>Head of Household</option>
-                </select>
+                <label for="withdrawal_tax_rate_pct" class="block text-sm font-medium text-gray-600 mb-1">Assumed tax rate on withdrawals (%)</label>
+                <input type="number" name="withdrawal_tax_rate_pct" id="withdrawal_tax_rate_pct"
+                       value="{{ '%.1f'|format(edit_param.withdrawal_tax_rate * 100) if edit_param else 0 }}"
+                       min="0" max="60" step="0.1"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+                <p class="text-xs text-gray-500 mt-1">0% = Roth or already after-tax; 15–25% = traditional 401(k)/IRA; 10–15% = taxable brokerage (mostly LTCG).</p>
             </div>
 
             <div class="flex gap-3">

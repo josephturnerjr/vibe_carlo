@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
     spending_distribution TEXT NOT NULL,
     years_to_simulate INTEGER NOT NULL,
     sample_years INTEGER,
-    filing_status TEXT,
+    withdrawal_tax_rate REAL NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS plan_parameter_sets (
     bond_value REAL NOT NULL,
     earnings REAL NOT NULL DEFAULT 0,
     spending_distribution TEXT NOT NULL,
-    filing_status TEXT,
+    withdrawal_tax_rate REAL NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -101,6 +101,22 @@ def _migrate_add_user_id(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_add_withdrawal_tax_rate(conn: sqlite3.Connection) -> None:
+    """Add withdrawal_tax_rate column to snapshots and plan_parameter_sets if missing.
+
+    Older databases had a filing_status TEXT column instead; that column is left
+    in place (unused) rather than dropped, since SQLite's DROP COLUMN is version-
+    dependent. All existing rows default to a 0% tax rate.
+    """
+    for table in ("snapshots", "plan_parameter_sets"):
+        columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if "withdrawal_tax_rate" not in columns:
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN withdrawal_tax_rate REAL NOT NULL DEFAULT 0"
+            )
+    conn.commit()
+
+
 def get_db_path() -> Path:
     """Return the path to the SQLite database file.
 
@@ -126,6 +142,7 @@ def init_db(db_path: Path | None = None) -> None:
         conn.execute(_CREATE_STATEMENTS_TABLE)
         conn.execute(_CREATE_STATEMENT_ACCOUNTS_TABLE)
         _migrate_add_user_id(conn)
+        _migrate_add_withdrawal_tax_rate(conn)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()
     finally:

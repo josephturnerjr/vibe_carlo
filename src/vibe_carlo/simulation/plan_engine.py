@@ -7,7 +7,6 @@ from vibe_carlo.schemas import PlanParameterSet, SimulationResult
 from vibe_carlo.simulation.distributions import sample_spending
 from vibe_carlo.simulation.engine import _build_bootstrap_indices
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
-from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
 
 def run_plan_simulation(
@@ -67,8 +66,8 @@ def run_plan_simulation(
         if phase_years == 0:
             continue
         phase_shortfall = shortfall[:, col : col + phase_years]
-        if ps.filing_status is not None:
-            gross_parts.append(gross_up_withdrawal_array(phase_shortfall, ps.filing_status))
+        if ps.withdrawal_tax_rate > 0:
+            gross_parts.append(phase_shortfall / (1.0 - ps.withdrawal_tax_rate))
         else:
             gross_parts.append(phase_shortfall)
         col += phase_years

@@ -20,7 +20,6 @@ from vibe_carlo.plans import (
     update_plan_name,
 )
 from vibe_carlo.schemas import (
-    FilingStatus,
     FlatDistribution,
     ParamSetSpec,
     SpendingDistribution,
@@ -48,7 +47,7 @@ def _make_spec(
     bonds: float = 50000,
     earnings: float = 60000,
     spending: SpendingDistribution | None = None,
-    filing_status: FilingStatus | None = None,
+    withdrawal_tax_rate: float = 0.0,
 ) -> ParamSetSpec:
     return ParamSetSpec(
         name=name,
@@ -58,7 +57,7 @@ def _make_spec(
         bond_value=bonds,
         earnings=earnings,
         spending_distribution=spending or FlatDistribution(value=40000),
-        filing_status=filing_status,
+        withdrawal_tax_rate=withdrawal_tax_rate,
     )
 
 
@@ -175,7 +174,7 @@ def test_update_parameter_set(db: tuple[Path, int]) -> None:
             bond_value=100000,
             earnings=80000,
             spending_distribution=FlatDistribution(value=50000),
-            filing_status=FilingStatus.single,
+            withdrawal_tax_rate=0.22,
         ),
     )
     ps = get_parameter_set(conn, ps_id, user_id)

@@ -3,7 +3,6 @@
  *
  * Direct transliteration of:
  *   src/vibe_carlo/simulation/engine.py
- *   src/vibe_carlo/simulation/tax.py
  *   src/vibe_carlo/simulation/distributions.py
  *
  * Exposes pure functions so the parity tests (Node) can import them, plus a
@@ -31,66 +30,6 @@
             t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
             return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
         };
-    }
-
-    // -----------------------------------------------------------------------
-    // Tax constants — mirror simulation/tax.py exactly.
-    // -----------------------------------------------------------------------
-
-    const TAX_RATES = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
-
-    const TAX_BRACKETS = {
-        single:             [12400,  50400, 105700, 201775, 256225, 640600, Infinity],
-        married_jointly:    [24800, 100800, 211400, 403550, 512450, 768700, Infinity],
-        married_separately: [12400,  50400, 105700, 201775, 256225, 384350, Infinity],
-        head_of_household:  [17700,  67450, 105700, 201750, 256200, 640600, Infinity],
-    };
-
-    const STANDARD_DEDUCTION = {
-        single: 16100.0,
-        married_jointly: 32200.0,
-        married_separately: 16100.0,
-        head_of_household: 24150.0,
-    };
-
-    function grossUpWithdrawalArray(desiredSpending, filingStatus) {
-        const stdDed = STANDARD_DEDUCTION[filingStatus];
-        const brackets = TAX_BRACKETS[filingStatus];
-        const n = desiredSpending.length;
-        const afterTaxRemaining = new Float64Array(n);
-        for (let i = 0; i < n; i++) {
-            // Match Python: clamp negatives to 0 in phase-1 use; here we mirror
-            // the `np.maximum(use, 0.0)` after standard deduction by clamping
-            // remaining to 0 when negative below.
-            afterTaxRemaining[i] = desiredSpending[i];
-        }
-        const gross = new Float64Array(n);
-
-        if (stdDed > 0) {
-            for (let i = 0; i < n; i++) {
-                let use = Math.min(stdDed, afterTaxRemaining[i]);
-                if (use < 0) use = 0;
-                gross[i] += use;
-                afterTaxRemaining[i] -= use;
-            }
-        }
-
-        let prevBound = 0.0;
-        for (let r = 0; r < TAX_RATES.length; r++) {
-            const rate = TAX_RATES[r];
-            const upper = brackets[r];
-            const bracketCapacity = upper - prevBound;
-            const afterTaxPerDollar = 1.0 - rate;
-            const afterTaxCapacity = bracketCapacity * afterTaxPerDollar;
-            for (let i = 0; i < n; i++) {
-                let canFill = Math.min(afterTaxRemaining[i], afterTaxCapacity);
-                if (canFill < 0) canFill = 0;
-                gross[i] += canFill / afterTaxPerDollar;
-                afterTaxRemaining[i] -= canFill;
-            }
-            prevBound = upper;
-        }
-        return gross;
     }
 
     // -----------------------------------------------------------------------
@@ -176,7 +115,7 @@
     //
     // Inputs:
     //   params: { cash_value, market_value, bond_value, earnings,
-    //             filing_status (string|null), years_to_simulate }
+    //             withdrawal_tax_rate (0..1), years_to_simulate }
     //   indicesFlat:  Int32Array(nRuns*years), historical-row indices
     //   spendingFlat: Float64Array(nRuns*years), per-run-per-year spending dollars
     //   historicalData: Float64Array(nHistorical*3) row-major [sp500, bond, cpi]
@@ -212,9 +151,15 @@
             }
         }
 
-        const grossWithdrawals = params.filing_status
-            ? grossUpWithdrawalArray(shortfall, params.filing_status)
-            : shortfall;
+        const taxRate = params.withdrawal_tax_rate || 0;
+        let grossWithdrawals;
+        if (taxRate > 0) {
+            const scale = 1.0 / (1.0 - taxRate);
+            grossWithdrawals = new Float64Array(total);
+            for (let i = 0; i < total; i++) grossWithdrawals[i] = shortfall[i] * scale;
+        } else {
+            grossWithdrawals = shortfall;
+        }
 
         const portfolios = new Float64Array(nRuns * (years + 1));
         const everHitZero = new Uint8Array(nRuns);
@@ -292,17 +237,13 @@
 
         let grossWithdrawal = null;
         let effectiveTaxRate = null;
-        if (params.filing_status) {
+        const taxRate = params.withdrawal_tax_rate || 0;
+        if (taxRate > 0) {
             const cells = k * years;
-            let gSum = 0, sSum = 0;
-            for (let i = 0; i < cells; i++) {
-                gSum += grossWithdrawals[i];
-                sSum += shortfall[i];
-            }
-            const meanGross = gSum / cells;
-            const meanShortfall = sSum / cells;
-            grossWithdrawal = meanGross;
-            effectiveTaxRate = meanGross > 0 ? (meanGross - meanShortfall) / meanGross : 0.0;
+            let gSum = 0;
+            for (let i = 0; i < cells; i++) gSum += grossWithdrawals[i];
+            grossWithdrawal = gSum / cells;
+            effectiveTaxRate = taxRate;
         }
 
         return {
@@ -398,7 +339,9 @@
         const bond = num('bond_value', 0);
         const earnings = num('earnings', 0);
         const years = num('years_to_simulate', 30);
-        const filingStatus = str('filing_status') || null;
+        // Form field is a percentage (0-50); internally we store a fraction (0-0.5).
+        const taxRatePct = num('withdrawal_tax_rate_pct', 0);
+        const withdrawalTaxRate = taxRatePct / 100;
         const distType = str('spending_dist_type') || 'flat';
 
         let spendingDist;
@@ -425,6 +368,9 @@
         if (cash + market + bond <= 0) errors.push('Total portfolio value must be greater than zero');
         if (earnings < 0) errors.push('Earnings must be non-negative');
         if (years <= 0) errors.push('Years to simulate must be positive');
+        if (withdrawalTaxRate < 0 || withdrawalTaxRate >= 1) {
+            errors.push('Withdrawal tax rate must be between 0% and 100%');
+        }
         if (spendingDist.dist_type === 'uniform' || spendingDist.dist_type === 'truncated_normal') {
             if (spendingDist.low > spendingDist.high) errors.push('Spending: low must be ≤ high');
         }
@@ -443,7 +389,7 @@
                 earnings: earnings,
                 spending_distribution: spendingDist,
                 years_to_simulate: Math.floor(years),
-                filing_status: filingStatus,
+                withdrawal_tax_rate: withdrawalTaxRate,
             },
             errors: errors,
         };
@@ -454,12 +400,8 @@
     // -----------------------------------------------------------------------
 
     const ClientSim = {
-        // Constants
-        TAX_RATES, TAX_BRACKETS, STANDARD_DEDUCTION,
         // PRNG
         makeRng,
-        // Tax
-        grossUpWithdrawalArray,
         // Sampling
         sampleFlat, sampleUniform, sampleTruncatedNormal, sampleSpending,
         // Bootstrap

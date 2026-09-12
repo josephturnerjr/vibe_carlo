@@ -51,7 +51,7 @@ def _param_set_form_data(
     dist_high: str = "0",
     dist_mean: str = "0",
     dist_stddev: str = "5000",
-    filing_status: str = "",
+    withdrawal_tax_rate_pct: str = "",
 ) -> dict[str, str]:
     data: dict[str, str] = {
         "param_name": name,
@@ -68,8 +68,8 @@ def _param_set_form_data(
     }
     if duration:
         data["duration"] = duration
-    if filing_status:
-        data["filing_status"] = filing_status
+    if withdrawal_tax_rate_pct:
+        data["withdrawal_tax_rate_pct"] = withdrawal_tax_rate_pct
     return data
 
 

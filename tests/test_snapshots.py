@@ -7,7 +7,6 @@ import pytest
 from vibe_carlo.auth import create_user
 from vibe_carlo.db import get_connection, init_db
 from vibe_carlo.schemas import (
-    FilingStatus,
     FlatDistribution,
     SimulationInput,
     TruncatedNormalDistribution,
@@ -41,7 +40,7 @@ def _make_params(
     spending: FlatDistribution | UniformDistribution | TruncatedNormalDistribution | None = None,
     years: int = 30,
     sample_years: int | None = None,
-    filing_status: FilingStatus | None = None,
+    withdrawal_tax_rate: float = 0.0,
 ) -> SimulationInput:
     dist = spending or FlatDistribution(value=40000)
     return SimulationInput(
@@ -52,7 +51,7 @@ def _make_params(
         spending_distribution=dist,
         years_to_simulate=years,
         sample_years=sample_years,
-        filing_status=filing_status,
+        withdrawal_tax_rate=withdrawal_tax_rate,
     )
 
 
@@ -220,11 +219,11 @@ def test_multiple_snapshots_same_date(db: tuple[Path, int]) -> None:
     assert names == {"A", "B"}
 
 
-def test_snapshot_with_all_optional_fields_none(db: tuple[Path, int]) -> None:
+def test_snapshot_with_all_optional_fields_defaulted(db: tuple[Path, int]) -> None:
     db_path, user_id = db
     conn = get_connection(db_path)
     # sample_years=None gets defaulted to years_to_simulate by SimulationInput validator
-    params = _make_params(sample_years=None, filing_status=None)
+    params = _make_params(sample_years=None, withdrawal_tax_rate=0.0)
     sid = create_snapshot(conn, user_id, None, "2025-01-01", params)
     row = get_snapshot(conn, sid, user_id)
     conn.close()
@@ -232,16 +231,16 @@ def test_snapshot_with_all_optional_fields_none(db: tuple[Path, int]) -> None:
     assert row is not None
     assert row.name is None
     assert row.sample_years == 30  # defaults to years_to_simulate
-    assert row.filing_status is None
+    assert row.withdrawal_tax_rate == 0.0
 
 
-def test_snapshot_preserves_filing_status(db: tuple[Path, int]) -> None:
+def test_snapshot_preserves_withdrawal_tax_rate(db: tuple[Path, int]) -> None:
     db_path, user_id = db
     conn = get_connection(db_path)
-    for status in FilingStatus:
-        params = _make_params(filing_status=status)
+    for rate in (0.0, 0.15, 0.22, 0.32):
+        params = _make_params(withdrawal_tax_rate=rate)
         sid = create_snapshot(conn, user_id, None, "2025-01-01", params)
         row = get_snapshot(conn, sid, user_id)
         assert row is not None
-        assert row.filing_status == status
+        assert row.withdrawal_tax_rate == rate
     conn.close()

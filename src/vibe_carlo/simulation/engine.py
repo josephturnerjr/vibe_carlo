@@ -4,7 +4,6 @@ import numpy.typing as npt
 from vibe_carlo.schemas import SimulationInput, SimulationResult
 from vibe_carlo.simulation.distributions import sample_spending
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
-from vibe_carlo.simulation.tax import gross_up_withdrawal_array
 
 
 def run_simulation(
@@ -28,12 +27,11 @@ def run_simulation(
     shortfall = np.maximum(spending_samples - params.earnings, 0.0)
     surplus = np.maximum(params.earnings - spending_samples, 0.0)
 
-    # Compute gross withdrawals (pre-tax) if tax adjustment is active
-    if params.filing_status is not None:
-        gross_withdrawals = gross_up_withdrawal_array(
-            shortfall,
-            params.filing_status,
-        )
+    # Gross up the shortfall by the assumed effective tax rate so the net after
+    # tax equals the shortfall. A rate of 0 leaves the shortfall unchanged.
+    tax_rate = params.withdrawal_tax_rate
+    if tax_rate > 0:
+        gross_withdrawals = shortfall / (1.0 - tax_rate)
     else:
         gross_withdrawals = shortfall
 
@@ -85,17 +83,12 @@ def run_simulation(
     year_labels = list(range(years + 1))
     final_year_distribution = portfolios[:, -1].tolist()
 
-    # Tax info for results (only when tax adjustment is active)
+    # Tax info for results (only when a positive tax rate is set)
     result_gross: float | None = None
     result_etr: float | None = None
-    if params.filing_status is not None:
-        mean_gross = float(np.mean(gross_withdrawals))
-        mean_shortfall = float(np.mean(shortfall))
-        result_gross = mean_gross
-        if mean_gross > 0:
-            result_etr = (mean_gross - mean_shortfall) / mean_gross
-        else:
-            result_etr = 0.0
+    if tax_rate > 0:
+        result_gross = float(np.mean(gross_withdrawals))
+        result_etr = tax_rate
 
     return SimulationResult(
         year_labels=year_labels,

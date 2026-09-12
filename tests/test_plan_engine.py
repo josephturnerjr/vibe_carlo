@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from vibe_carlo.schemas import (
-    FilingStatus,
     FlatDistribution,
     PlanParameterSet,
     UniformDistribution,
@@ -25,7 +24,7 @@ def _make_ps(
     bonds: float = 20_000.0,
     earnings: float = 12_000.0,
     spending: FlatDistribution | UniformDistribution | None = None,
-    filing_status: FilingStatus | None = None,
+    withdrawal_tax_rate: float = 0.0,
 ) -> PlanParameterSet:
     dist = spending or FlatDistribution(value=0.0)
     return PlanParameterSet(
@@ -39,7 +38,7 @@ def _make_ps(
         bond_value=bonds,
         earnings=earnings,
         spending_distribution=dist,
-        filing_status=filing_status,
+        withdrawal_tax_rate=withdrawal_tax_rate,
     )
 
 
@@ -323,7 +322,7 @@ def test_tax_differs_per_phase() -> None:
         bonds=50_000,
         spending=spending,
         earnings=0,
-        filing_status=None,
+        withdrawal_tax_rate=0.0,
     )
     ps2_no_tax = _make_ps(
         ps_id=2,
@@ -333,7 +332,7 @@ def test_tax_differs_per_phase() -> None:
         bonds=50_000,
         spending=spending,
         earnings=0,
-        filing_status=None,
+        withdrawal_tax_rate=0.0,
     )
     ps2_tax = _make_ps(
         ps_id=2,
@@ -343,7 +342,7 @@ def test_tax_differs_per_phase() -> None:
         bonds=50_000,
         spending=spending,
         earnings=0,
-        filing_status=FilingStatus.single,
+        withdrawal_tax_rate=0.25,
     )
 
     r_no = run_plan_simulation(

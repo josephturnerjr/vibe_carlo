@@ -138,7 +138,8 @@ def test_starting_value_correct() -> None:
         assert result.percentiles[key][0] == total
 
 
-def test_tax_enabled_increases_effective_withdrawal() -> None:
+def test_tax_rate_grosses_up_shortfall() -> None:
+    """A 20% assumed rate on a $50K shortfall implies $50K/(1-0.2) = $62,500 gross."""
     data = load_historical_data()
     params_no_tax = _make_params(
         cash_value=0.0,
@@ -153,35 +154,34 @@ def test_tax_enabled_increases_effective_withdrawal() -> None:
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=50_000.0),
         earnings=0.0,
-        filing_status="single",
+        withdrawal_tax_rate=0.20,
     )
     result_no_tax = run_simulation(params_no_tax, data, n_runs=1000, seed=42)
     result_tax = run_simulation(params_tax, data, n_runs=1000, seed=42)
 
     assert result_tax.success_rate < result_no_tax.success_rate
     assert result_tax.gross_withdrawal is not None
-    assert result_tax.gross_withdrawal > 50_000.0
-    assert result_tax.effective_tax_rate is not None
-    assert result_tax.effective_tax_rate > 0.0
+    assert abs(result_tax.gross_withdrawal - 62_500.0) < 1.0
+    assert result_tax.effective_tax_rate == 0.20
 
 
-def test_filing_status_none_identical_to_omitted() -> None:
+def test_tax_rate_zero_identical_to_omitted() -> None:
     data = load_historical_data()
     params_omitted = _make_params(
         spending_distribution=FlatDistribution(value=40_000.0),
         earnings=0.0,
     )
-    params_none = _make_params(
+    params_zero = _make_params(
         spending_distribution=FlatDistribution(value=40_000.0),
         earnings=0.0,
-        filing_status=None,
+        withdrawal_tax_rate=0.0,
     )
     result_omitted = run_simulation(params_omitted, data, n_runs=100, seed=42)
-    result_none = run_simulation(params_none, data, n_runs=100, seed=42)
+    result_zero = run_simulation(params_zero, data, n_runs=100, seed=42)
 
-    assert result_omitted.success_rate == result_none.success_rate
+    assert result_omitted.success_rate == result_zero.success_rate
     assert result_omitted.gross_withdrawal is None
-    assert result_none.gross_withdrawal is None
+    assert result_zero.gross_withdrawal is None
 
 
 def test_historical_data_shape() -> None:
@@ -275,10 +275,11 @@ def test_earnings_cover_all_spending_no_withdrawal() -> None:
         bond_value=0.0,
         spending_distribution=FlatDistribution(value=10_000.0),
         earnings=20_000.0,
-        filing_status="single",
+        withdrawal_tax_rate=0.25,
     )
     result = run_simulation(params, data, n_runs=100, seed=42)
 
     assert result.gross_withdrawal is not None
     assert result.gross_withdrawal == 0.0
-    assert result.effective_tax_rate == 0.0
+    # The rate is still the assumed rate even when no withdrawals are needed.
+    assert result.effective_tax_rate == 0.25
