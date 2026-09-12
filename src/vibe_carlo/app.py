@@ -50,6 +50,7 @@ from vibe_carlo.schemas import (
 from vibe_carlo.simulation.engine import run_simulation
 from vibe_carlo.simulation.models import load_historical_data
 from vibe_carlo.simulation.plan_engine import run_plan_simulation
+from vibe_carlo.simulation.solver import solve_plan_safe_spending, solve_safe_spending
 from vibe_carlo.snapshots import (
     create_snapshot,
     delete_snapshot,
@@ -338,6 +339,57 @@ async def simulate(
             "params": params,
         },
     )
+
+
+@app.post("/safe-spending", response_model=None)
+async def safe_spending(
+    request: Request,
+    cash_value: float = Form(default=0.0),
+    market_value: float = Form(default=0.0),
+    bond_value: float = Form(default=0.0),
+    earnings: float = Form(default=0.0),
+    spending_dist_type: str = Form(default="flat"),
+    spending_dist_value: float = Form(default=0.0),
+    spending_dist_low: float = Form(default=0.0),
+    spending_dist_high: float = Form(default=0.0),
+    spending_dist_mean: float = Form(default=0.0),
+    spending_dist_stddev: float = Form(default=5000.0),
+    years_to_simulate: int = Form(default=30),
+    sample_years: int | None = Form(default=None),
+    withdrawal_tax_rate_pct: float = Form(default=0.0),
+    target_net_worth: float = Form(default=0.0),
+) -> Response:
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+
+    try:
+        params = _parse_form_params(
+            cash_value,
+            market_value,
+            bond_value,
+            earnings,
+            spending_dist_type,
+            spending_dist_value,
+            spending_dist_low,
+            spending_dist_high,
+            spending_dist_mean,
+            spending_dist_stddev,
+            years_to_simulate,
+            sample_years,
+            withdrawal_tax_rate_pct,
+        )
+        table = await asyncio.to_thread(
+            solve_safe_spending, params, historical_data, target_net_worth
+        )
+    except (ValidationError, ValueError) as e:
+        if isinstance(e, ValidationError):
+            messages = [err.get("msg", "Validation error") for err in e.errors()]
+        else:
+            messages = [str(e)]
+        return JSONResponse(status_code=422, content={"detail": messages})
+
+    return templates.TemplateResponse(request, "partials/safe_spending.html", {"table": table})
 
 
 # ---------------------------------------------------------------------------
@@ -1139,3 +1191,53 @@ async def run_plan_simulation_route(
         "partials/results.html",
         {"result": result, "params": None},
     )
+
+
+@app.post("/plans/{plan_id}/safe-spending", response_model=None)
+async def plan_safe_spending_route(
+    request: Request,
+    plan_id: int,
+    years_to_simulate: int = Form(default=30),
+    sample_years: int | None = Form(default=None),
+    target_net_worth: float = Form(default=0.0),
+) -> Response:
+    """Solve the plan's final phase for the spending it can sustain.
+
+    Earlier phases describe commitments already made, so only the concluding
+    phase is varied.
+    """
+    user = _get_current_user(request)
+    if user is None:
+        return _auth_redirect(request)
+    user_id, _user_email = user
+
+    conn = get_connection(_db_path)
+    try:
+        plan = get_plan(conn, plan_id, user_id)
+        if plan is None:
+            return HTMLResponse(status_code=404, content="Plan not found")
+        param_sets = list_parameter_sets(conn, plan_id, user_id)
+    finally:
+        conn.close()
+
+    if not param_sets:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": ["Plan has no parameter sets"]},
+        )
+
+    effective_sample = sample_years if sample_years else years_to_simulate
+
+    try:
+        table = await asyncio.to_thread(
+            solve_plan_safe_spending,
+            param_sets,
+            years_to_simulate,
+            effective_sample,
+            historical_data,
+            target_net_worth,
+        )
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"detail": [str(e)]})
+
+    return templates.TemplateResponse(request, "partials/safe_spending.html", {"table": table})

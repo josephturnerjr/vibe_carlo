@@ -9,6 +9,32 @@ from vibe_carlo.simulation.engine import _build_bootstrap_indices
 from vibe_carlo.simulation.models import COL_BOND, COL_CPI, COL_SP500
 
 
+def compute_phase_durations(
+    parameter_sets: list[PlanParameterSet],
+    years: int,
+) -> list[tuple[PlanParameterSet, int]]:
+    """Resolve each parameter set's effective duration within the horizon.
+
+    A set with no duration, and the final set regardless, absorbs whatever
+    years remain. Sets past the end of the horizon are dropped, and sets that
+    would occupy zero years are omitted.
+    """
+    phases: list[tuple[PlanParameterSet, int]] = []
+    remaining = years
+    for i, ps in enumerate(parameter_sets):
+        if remaining <= 0:
+            break
+        is_last = i == len(parameter_sets) - 1
+        if is_last or ps.duration is None:
+            phase_years = remaining
+        else:
+            phase_years = min(ps.duration, remaining)
+        if phase_years > 0:
+            phases.append((ps, phase_years))
+        remaining -= phase_years
+    return phases
+
+
 def run_plan_simulation(
     parameter_sets: list[PlanParameterSet],
     years_to_simulate: int,
@@ -28,26 +54,12 @@ def run_plan_simulation(
     rng = np.random.default_rng(seed)
     years = years_to_simulate
 
-    # --- Compute effective phase durations ---
-    phases: list[tuple[PlanParameterSet, int]] = []
-    remaining = years
-    for i, ps in enumerate(parameter_sets):
-        if remaining <= 0:
-            break
-        is_last = i == len(parameter_sets) - 1
-        if is_last or ps.duration is None:
-            phase_years = remaining
-        else:
-            phase_years = min(ps.duration, remaining)
-        phases.append((ps, phase_years))
-        remaining -= phase_years
+    phases = compute_phase_durations(parameter_sets, years)
 
     # --- Build per-phase spending and earnings arrays ---
     spending_parts: list[npt.NDArray[np.float64]] = []
     earnings_parts: list[npt.NDArray[np.float64]] = []
     for ps, phase_years in phases:
-        if phase_years == 0:
-            continue
         spending = sample_spending(ps.spending_distribution, n_runs, phase_years, rng)
         spending_parts.append(spending)
         earnings_parts.append(np.full((n_runs, phase_years), ps.earnings, dtype=np.float64))
@@ -63,8 +75,6 @@ def run_plan_simulation(
     gross_parts: list[npt.NDArray[np.float64]] = []
     col = 0
     for ps, phase_years in phases:
-        if phase_years == 0:
-            continue
         phase_shortfall = shortfall[:, col : col + phase_years]
         if ps.withdrawal_tax_rate > 0:
             gross_parts.append(phase_shortfall / (1.0 - ps.withdrawal_tax_rate))

@@ -100,10 +100,29 @@
         </div>
     </div>
 
-    <button type="submit"
-            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
-        Run Simulation
-    </button>
+    <h2 class="text-lg font-semibold text-gray-700">Safe Spending</h2>
+    <div>
+        <label for="target_net_worth" class="block text-sm font-medium text-gray-600 mb-1">Target net worth at the end ($)</label>
+        <input type="number" name="target_net_worth" id="target_net_worth" value="0" min="0" step="1000"
+               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border px-3 py-2">
+        <p class="text-xs text-gray-400 mt-1">Leave at $0 to ask only that the money lasts. Raise it to also leave an inheritance or a cushion.</p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
+            Run Simulation
+        </button>
+        <button type="button"
+                hx-post="/safe-spending"
+                hx-include="#sim-form"
+                hx-target="#safe-spending"
+                hx-swap="innerHTML"
+                hx-indicator="#solve-spinner"
+                class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors">
+            Safe Spending Table
+        </button>
+    </div>
 </form>
 
 <dialog id="snapshot-modal" class="snapshot-dialog">
@@ -141,6 +160,13 @@
     <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
     <p class="text-sm text-gray-500 mt-2">Running 10,000 simulations...</p>
 </div>
+
+<div id="solve-spinner" class="htmx-indicator text-center py-8">
+    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-emerald-600 border-t-transparent"></div>
+    <p class="text-sm text-gray-500 mt-2">Solving for safe spending...</p>
+</div>
+
+<div id="safe-spending" class="mt-8"></div>
 
 <div id="results" class="mt-8"></div>
 

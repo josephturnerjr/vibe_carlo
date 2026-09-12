@@ -100,6 +100,25 @@ class SimulationResult(BaseModel):
     effective_tax_rate: float | None = None
 
 
+class SafeSpendingRow(BaseModel):
+    """One row of the safe-spending table."""
+
+    success_pct: int
+    # None when no non-negative spending level reaches this success rate.
+    annual_spending: float | None
+    multiplier: float | None
+
+
+class SafeSpendingTable(BaseModel):
+    rows: list[SafeSpendingRow]
+    target_net_worth: float
+    current_mean_spending: float
+    solve_years: int
+    # Name of the plan phase being solved for; None for a single parameter set.
+    phase_name: str | None = None
+    method: Literal["closed_form", "refined"]
+
+
 class TimelinePoint(BaseModel):
     date: str  # ISO date "YYYY-MM-DD"
     value: float  # cash + market + bonds

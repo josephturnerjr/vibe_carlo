@@ -42,6 +42,38 @@ Each simulation request runs 10,000 Monte Carlo paths with the following procedu
 
 All outputs are in real (inflation-adjusted) dollars. Contributions and spending are assumed to be in constant real dollars.
 
+## Safe Spending
+
+The simulation answers "given this spending, what fraction of runs survive?".
+The solver in `src/vibe_carlo/simulation/solver.py` answers the inverse, for
+every success rate at once: **how much can be spent to survive 95% / 90% / ...
+of futures?** A target ending net worth can be required on top of merely not
+running out.
+
+Within a single run the portfolio recursion is linear in the spending level, so
+each run has an exact critical multiplier — the most it could have spent and
+still finished solvent. Ruin for a run is then just `m > m*`, which makes the
+success rate at multiplier `m` the fraction of runs with `m* >= m`, and the
+answer at any success rate a quantile of the `m*` distribution. One simulation
+pass produces the entire table, with no search and no iteration.
+
+Linearity holds while every year in the solved window withdraws from the
+portfolio. If earnings exceed spending in some year *and* a withdrawal tax rate
+applies, the `max(spending - earnings, 0)` clamp kinks the relationship and the
+closed form becomes optimistic; the solver detects this and refines the answer
+by vectorised bisection against the exact recursion. The table reports which
+path produced it.
+
+For a **plan**, only the final phase is solved. Earlier phases describe life and
+career events already committed, so they are held exactly as authored and the
+concluding retirement phase absorbs the question. The authored spending
+distribution is scaled as a whole rather than replaced by a flat number, so its
+shape is preserved and the figure reported is the resulting mean annual spend.
+
+Rows stop at 95% deliberately: the historical dataset is ~100 years long, so the
+far tail is limited by how much history exists rather than by the number of
+Monte Carlo runs, and a 99% row would imply a precision the model does not have.
+
 ## Running Locally
 
 ```bash
